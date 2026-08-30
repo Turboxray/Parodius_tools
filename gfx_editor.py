@@ -175,7 +175,8 @@ def run_gui(path=None):
             return (ci % f["per_row"]) * f["size"], (ci // f["per_row"]) * f["size"]
 
         def cell_rgb(self, ci):
-            slot = self.palmap[self.fmt].get(str(ci), 0)
+            # unassigned cells follow the ACTIVE palette; right-click pins one
+            slot = self.palmap[self.fmt].get(str(ci), self.active_pal)
             if slot >= len(self.palettes):
                 slot = 0
             p = self.palettes[slot]
@@ -207,7 +208,7 @@ def run_gui(path=None):
             main = ttk.Frame(self.root); main.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
 
             # sheet (left)
-            sf = ttk.LabelFrame(main, text="Sheet  (click: edit cell, right-click: apply active palette)")
+            sf = ttk.LabelFrame(main, text="Sheet  (click: edit cell, right-click: pin active palette to cell)")
             sf.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
             self.sheet = tk.Canvas(sf, bg="#181818", width=420)
             vsb = ttk.Scrollbar(sf, orient=tk.VERTICAL, command=self.sheet.yview)
@@ -307,6 +308,11 @@ def run_gui(path=None):
                             if 0 <= s < len(self.palettes):
                                 m[str(c)] = s
                         self.palmap[k] = m
+                    d = int(sc.get("default", 0))
+                    if d >= NBUILTIN - shift:
+                        d += shift
+                    if 0 <= d < len(self.palettes):
+                        self.active_pal = d
                 except Exception as ex:
                     messagebox.showwarning("Sidecar", "Couldn't read %s:\n%s"
                                            % (os.path.basename(side), ex))
@@ -638,7 +644,12 @@ def run_gui(path=None):
                 ttk.Label(row, text="%d: %s" % (i, p["label"])).pack(side=tk.LEFT, padx=4)
 
         def set_active_pal(self):
+            if self.active_pal == self.pal_var.get():
+                return
             self.active_pal = self.pal_var.get()
+            if self.words:
+                self.render_sheet()
+            self.render_cell()
 
         def remove_palette(self):
             i = self.pal_var.get()
@@ -742,6 +753,7 @@ def run_gui(path=None):
             out = out[:self.nbytes] + bytes(self.nbytes - min(len(out), self.nbytes))
             open(self.path, "wb").write(out)
             sc = {"format": self.fmt, "nbuiltin": NBUILTIN,
+                  "default": self.active_pal,
                   "palettes": [{"label": p["label"], "colors": p["colors"]}
                                for p in self.palettes[NBUILTIN:]],
                   "map": self.palmap}
