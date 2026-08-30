@@ -180,10 +180,12 @@ DECODE = {"tile": tile_decode, "sprite": sprite_decode}
 ENCODE = {"tile": tile_encode, "sprite": sprite_encode}
 
 
-def run_gui(path=None):
+def run_gui(path=None, classify=False):
     pie = _load_pie()
 
     class App:
+        classify_mode = classify
+
         def __init__(self, root):
             self.root = root
             self.path = None
@@ -243,10 +245,18 @@ def run_gui(path=None):
             ttk.Button(top, text="Browse bins...", command=self.browse_bins).pack(side=tk.LEFT, padx=(6, 0))
             ttk.Button(top, text="<", width=2, command=lambda: self.step_file(-1)).pack(side=tk.LEFT, padx=(6, 0))
             ttk.Button(top, text=">", width=2, command=lambda: self.step_file(1)).pack(side=tk.LEFT)
-            self.fmt_var = tk.StringVar(value="tile")
-            for txt, v in (("Tiles 8x8", "tile"), ("Sprites 16x16", "sprite")):
+            self.fmt_var = tk.StringVar(value="unknown" if self.classify_mode else "tile")
+            fmts = [("Tiles 8x8", "tile"), ("Sprites 16x16", "sprite")]
+            if self.classify_mode:
+                fmts.append(("Unknown", "unknown"))
+            for txt, v in fmts:
                 ttk.Radiobutton(top, text=txt, variable=self.fmt_var, value=v,
                                 command=self.set_fmt).pack(side=tk.LEFT, padx=6)
+            if self.classify_mode:
+                ttk.Button(top, text="Next unclassified", command=self.next_unclassified
+                           ).pack(side=tk.LEFT, padx=6)
+                self.prog_lbl = ttk.Label(top, text="")
+                self.prog_lbl.pack(side=tk.LEFT, padx=6)
             ttk.Label(top, text="Zoom:").pack(side=tk.LEFT, padx=(10, 2))
             self.zoom_var = tk.StringVar(value="3")
             zb = ttk.Combobox(top, textvariable=self.zoom_var, width=2, state="readonly",
@@ -356,7 +366,8 @@ def run_gui(path=None):
             self._sync_cur()
             st = self.bins.get(name)
             if st is None:
-                st = {"format": self.fmt, "map": {"tile": {}, "sprite": {}},
+                st = {"format": "unknown" if self.classify_mode else self.fmt,
+                      "map": {"tile": {}, "sprite": {}},
                       "default": None, "palettes": []}
                 side = self.sidecar_path()
                 if os.path.exists(side):        # legacy per-bin sidecar
@@ -372,7 +383,9 @@ def run_gui(path=None):
             self.palmap = st["map"]
             d = st.get("default")
             self.active_pal = d if (d is not None and 0 <= d < len(self.palettes)) else 0
-            self.fmt_var.set(self.fmt)
+            self.fmt_var.set(st["format"] if self.classify_mode else self.fmt)
+            if self.classify_mode:
+                self.update_progress()
             self.sel = None
             self.undo_stack = []
             self.dirty = False
@@ -524,8 +537,10 @@ def run_gui(path=None):
                 self.palmap = st["map"]
                 if st["format"] in FMT and st["format"] != self.fmt:
                     self.fmt = st["format"]
-                    self.fmt_var.set(self.fmt)
                     self.decode_all()
+                self.fmt_var.set(st["format"] if self.classify_mode else self.fmt)
+                if self.classify_mode:
+                    self.update_progress()
                 d = st.get("default")
                 if d is not None and 0 <= d < len(self.palettes):
                     self.active_pal = d
@@ -779,9 +794,20 @@ def run_gui(path=None):
 
         # ---------- format / zoom ----------
         def set_fmt(self, keep_undo=False):
-            self.fmt = self.fmt_var.get()
+            sel = self.fmt_var.get()
             if self.cur:
-                self.cur["format"] = self.fmt
+                self.cur["format"] = sel
+                # a classification also settles the block's flip siblings
+                if self.classify_mode and sel in FMT and self.path:
+                    for fl, p in flip_family(self.path)[1]:
+                        n = os.path.basename(p)
+                        sib = self.bins.setdefault(
+                            n, {"format": sel, "map": {"tile": {}, "sprite": {}},
+                                "default": None, "palettes": []})
+                        sib["format"] = sel
+            self.fmt = sel if sel in FMT else "tile"
+            if self.classify_mode:
+                self.update_progress()
             if not keep_undo:
                 self.undo_stack = []       # pixel coords are format-specific
             self.sel = None
@@ -789,6 +815,31 @@ def run_gui(path=None):
                 self.decode_all()
                 self.render_sheet()
             self.render_cell()
+
+        def _bin_files(self):
+            if not os.path.isdir(BINDIR):
+                return []
+            return sorted(f for f in os.listdir(BINDIR) if BIN_RE.match(f))
+
+        def update_progress(self):
+            files = self._bin_files()
+            done = sum(1 for f in files
+                       if self.bins.get(f, {}).get("format") in FMT)
+            self.prog_lbl.config(text="classified %d/%d" % (done, len(files)))
+
+        def next_unclassified(self):
+            files = self._bin_files()
+            if not files:
+                return
+            cur = os.path.basename(self.path) if self.path else ""
+            start = files.index(cur) + 1 if cur in files else 0
+            for i in range(len(files)):
+                f = files[(start + i) % len(files)]
+                if self.bins.get(f, {}).get("format") not in FMT:
+                    self.open_file(os.path.join(BINDIR, f))
+                    return
+            self.info.config(text="All %d bins classified - Save cfg and you're done."
+                             % len(files))
 
         def set_zoom(self):
             self.z = int(self.zoom_var.get())
@@ -1022,4 +1073,7 @@ def run_gui(path=None):
 
 
 if __name__ == "__main__":
-    run_gui(sys.argv[1] if len(sys.argv) > 1 else None)
+    argv = sys.argv[1:]
+    _classify = "--classify" in argv
+    argv = [a for a in argv if a != "--classify"]
+    run_gui(argv[0] if argv else None, classify=_classify)
