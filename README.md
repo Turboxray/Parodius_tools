@@ -52,9 +52,15 @@ SF2 side of `build_all.bat`:
 tool the colour hack was made with: two side-by-side palette panels, browse
 any of the game's colour blocks by bank:addr (sortable by level/usage),
 edit colours with RGB sliders (3-bit VCE), copy colours between panels
-(positionally or with Ctrl+C/Ctrl+V), and save back into `palette.inc` —
-rebuild and your recolour is in the ROM. `palette_org.inc` holds the
-original colours so edited blocks are tagged with their change counts.
+(positionally or with Ctrl+C/Ctrl+V). A **Source** selector loads the
+panels from the working `palette.inc`, from `palette_org.inc` (the
+original colours), or any other .inc — but **saving always writes
+`palette.inc`**, the file the build consumes.
+
+`palette_org.inc` is ripped from **your** ROM by `rip_palettes.py`
+(run automatically by `build_all.bat`), using `palette.inc` as the
+structural map — so the true original colours are always available for
+reference and for the editor's change-count tags.
 
 ## Credits
 

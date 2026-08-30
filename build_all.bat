@@ -8,6 +8,7 @@ rem original gfx region zeroed.
 set PATH=%PATH%;c:\huc\bin
 
 python pce_sf2_mapper_prep.py extract Parodius_Da__original.pce
+python rip_palettes.py
 if errorlevel 1 exit /b 1
 
 call :variant_224h

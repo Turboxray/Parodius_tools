@@ -432,6 +432,16 @@ def run_gui():
             self.root.minsize(940, 560)
             top = ttk.Frame(self.root, padding=6); top.pack(side=tk.TOP, fill=tk.X)
             ttk.Button(top, text="Reload file", command=self._reload_file).pack(side=tk.LEFT)
+            # SOURCE selector: what the panels load/browse from. Saving always
+            # writes to palette.inc (the build input) regardless of source.
+            ttk.Label(top, text="  Source:").pack(side=tk.LEFT)
+            self.src_var = tk.StringVar(value="palette.inc (working)")
+            src = ttk.Combobox(top, textvariable=self.src_var, width=24, state="readonly",
+                               values=["palette.inc (working)",
+                                       "palette_org.inc (original)",
+                                       "other file..."])
+            src.pack(side=tk.LEFT, padx=(2, 8))
+            src.bind("<<ComboboxSelected>>", lambda e: self._pick_source())
             self.use_vce = tk.BooleanVar(value=True)
             ttk.Checkbutton(top, text="VCE colours", variable=self.use_vce,
                             command=self._toggle_pal).pack(side=tk.LEFT, padx=12)
@@ -473,16 +483,33 @@ def run_gui():
                 if p.sel is not None:
                     p.stage()
 
+        def _pick_source(self):
+            sel = self.src_var.get()
+            if sel.startswith("other"):
+                from tkinter import filedialog
+                p = filedialog.askopenfilename(initialdir=HERE, title="Source .inc",
+                                               filetypes=[("inc files", "*.inc"), ("all", "*.*")])
+                if not p:
+                    self.src_var.set(os.path.basename(getattr(self, "src_path", INC_FILE)))
+                    return
+                self.src_path = p
+            elif sel.startswith("palette_org"):
+                self.src_path = os.path.join(HERE, "palette_org.inc")
+            else:
+                self.src_path = INC_FILE
+            self._reload_file()
+
         def _reload_file(self):
             try:
-                self.pal = PaletteIncFile(INC_FILE)
+                src = getattr(self, "src_path", INC_FILE)
+                self.pal = PaletteIncFile(src)
                 org_path = os.path.join(HERE, "palette_org.inc")
                 if os.path.exists(org_path):
                     org = PaletteIncFile(org_path)
                     self.pal.orig_colors = {k: b["colors"] for k, b in org.blocks.items()}
                 note = "" if self.pal.orig_colors else " (palette_org.inc missing: no MODIFIED tags)"
-                self.info.config(text="Loaded palette.inc (%d blocks)%s.  Browse a block into each panel."
-                                 % (len(self.pal.blocks), note))
+                self.info.config(text="Loaded %s (%d blocks)%s.  Saving writes palette.inc."
+                                 % (os.path.basename(src), len(self.pal.blocks), note))
                 for p in (self.left, self.right):
                     p.refresh_nav()
                     if p.key and self.pal.get(*p.key):
@@ -654,11 +681,28 @@ def run_gui():
                 return
             if not (self.left.key or self.right.key):
                 messagebox.showwarning("Save", "Load a block first."); return
-            self.left.commit(); self.right.commit()
-            self.pal.save()
+            # destination is ALWAYS palette.inc (the build input), regardless
+            # of which source file the panels are showing
+            src = getattr(self, "src_path", INC_FILE)
+            if src == INC_FILE:
+                dest = self.pal
+            else:
+                dest = PaletteIncFile(INC_FILE)
+                dest.orig_colors = dict(self.pal.orig_colors)
+            skipped = []
+            for p in (self.left, self.right):
+                if p.key:
+                    if dest.get(*p.key):
+                        dest.set_colors(p.key[0], p.key[1], p.colors)
+                    else:
+                        skipped.append("$%02X:$%04X" % p.key)
+            dest.save()
             self.left.orig = list(self.left.colors); self.right.orig = list(self.right.colors)
             self.left.refresh_nav(); self.right.refresh_nav()
-            messagebox.showinfo("Saved", "Wrote palette.inc. Re-run the build (go.bat) to apply.")
+            msg = "Wrote palette.inc. Re-run the build to apply."
+            if skipped:
+                msg += "\n(Not in palette.inc, skipped: %s)" % ", ".join(skipped)
+            messagebox.showinfo("Saved", msg)
 
     root = tk.Tk()
     App(root)
