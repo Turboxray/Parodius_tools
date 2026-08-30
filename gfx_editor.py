@@ -60,7 +60,8 @@ def load_table():
         stages = f[7] if len(f) > 7 and f[7] != "-" else ""
         table[(int(f[0], 16), int(f[1], 16), int(f[2], 16))] = {
             "dst": int(f[6], 16), "dlen": int(f[5], 16), "stages": stages,
-            "hdr": int(f[8], 16) if len(f) > 8 else None}
+            "hdr": int(f[8], 16) if len(f) > 8 else None,
+            "content": f[9] if len(f) > 9 else "?"}
     return table
 
 
@@ -243,20 +244,15 @@ def run_gui(path=None):
             ttk.Button(top, text="Browse bins...", command=self.browse_bins).pack(side=tk.LEFT, padx=(6, 0))
             ttk.Button(top, text="<", width=2, command=lambda: self.step_file(-1)).pack(side=tk.LEFT, padx=(6, 0))
             ttk.Button(top, text=">", width=2, command=lambda: self.step_file(1)).pack(side=tk.LEFT)
-            # format = the content classification (per bin, kept in the cfg);
-            # its own row - the top bar is full
-            self.fmt_var = tk.StringVar(value="unknown")
+            # format row (the top bar is full); defaults per bin come from
+            # the table's content column (Turboxray's classification)
+            self.fmt_var = tk.StringVar(value="tile")
             row2 = ttk.Frame(self.root, padding=(6, 0, 6, 4))
             row2.pack(side=tk.TOP, fill=tk.X)
             ttk.Label(row2, text="Format:").pack(side=tk.LEFT)
-            for txt, v in (("Tiles 8x8", "tile"), ("Sprites 16x16", "sprite"),
-                           ("Unknown", "unknown")):
+            for txt, v in (("Tiles 8x8", "tile"), ("Sprites 16x16", "sprite")):
                 ttk.Radiobutton(row2, text=txt, variable=self.fmt_var, value=v,
                                 command=self.set_fmt).pack(side=tk.LEFT, padx=6)
-            ttk.Button(row2, text="Next unclassified", command=self.next_unclassified
-                       ).pack(side=tk.LEFT, padx=12)
-            self.prog_lbl = ttk.Label(row2, text="")
-            self.prog_lbl.pack(side=tk.LEFT, padx=6)
             ttk.Label(top, text="Zoom:").pack(side=tk.LEFT, padx=(10, 2))
             self.zoom_var = tk.StringVar(value="3")
             zb = ttk.Combobox(top, textvariable=self.zoom_var, width=2, state="readonly",
@@ -366,7 +362,10 @@ def run_gui(path=None):
             self._sync_cur()
             st = self.bins.get(name)
             if st is None:
-                st = {"format": "unknown", "map": {"tile": {}, "sprite": {}},
+                # unvisited bins start from the table's content classification
+                cf = {"T": "tile", "S": "sprite"}.get(
+                    self.meta["content"]) if self.meta else None
+                st = {"format": cf or "tile", "map": {"tile": {}, "sprite": {}},
                       "default": None, "palettes": []}
                 side = self.sidecar_path()
                 if os.path.exists(side):        # legacy per-bin sidecar
@@ -382,8 +381,7 @@ def run_gui(path=None):
             self.palmap = st["map"]
             d = st.get("default")
             self.active_pal = d if (d is not None and 0 <= d < len(self.palettes)) else 0
-            self.fmt_var.set(st["format"])
-            self.update_progress()
+            self.fmt_var.set(self.fmt)
             self.sel = None
             self.undo_stack = []
             self.dirty = False
@@ -536,8 +534,7 @@ def run_gui(path=None):
                 if st["format"] in FMT and st["format"] != self.fmt:
                     self.fmt = st["format"]
                     self.decode_all()
-                self.fmt_var.set(st["format"])
-                self.update_progress()
+                self.fmt_var.set(self.fmt)
                 d = st.get("default")
                 if d is not None and 0 <= d < len(self.palettes):
                     self.active_pal = d
@@ -803,7 +800,6 @@ def run_gui(path=None):
                                 "default": None, "palettes": []})
                         sib["format"] = sel
             self.fmt = sel if sel in FMT else "tile"
-            self.update_progress()
             if not keep_undo:
                 self.undo_stack = []       # pixel coords are format-specific
             self.sel = None
@@ -811,31 +807,6 @@ def run_gui(path=None):
                 self.decode_all()
                 self.render_sheet()
             self.render_cell()
-
-        def _bin_files(self):
-            if not os.path.isdir(BINDIR):
-                return []
-            return sorted(f for f in os.listdir(BINDIR) if BIN_RE.match(f))
-
-        def update_progress(self):
-            files = self._bin_files()
-            done = sum(1 for f in files
-                       if self.bins.get(f, {}).get("format") in FMT)
-            self.prog_lbl.config(text="classified %d/%d" % (done, len(files)))
-
-        def next_unclassified(self):
-            files = self._bin_files()
-            if not files:
-                return
-            cur = os.path.basename(self.path) if self.path else ""
-            start = files.index(cur) + 1 if cur in files else 0
-            for i in range(len(files)):
-                f = files[(start + i) % len(files)]
-                if self.bins.get(f, {}).get("format") not in FMT:
-                    self.open_file(os.path.join(BINDIR, f))
-                    return
-            self.info.config(text="All %d bins classified - Save cfg and you're done."
-                             % len(files))
 
         def set_zoom(self):
             self.z = int(self.zoom_var.get())
