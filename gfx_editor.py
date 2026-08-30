@@ -59,8 +59,55 @@ def load_table():
             continue
         stages = f[7] if len(f) > 7 and f[7] != "-" else ""
         table[(int(f[0], 16), int(f[1], 16), int(f[2], 16))] = {
-            "dst": int(f[6], 16), "dlen": int(f[5], 16), "stages": stages}
+            "dst": int(f[6], 16), "dlen": int(f[5], 16), "stages": stages,
+            "hdr": int(f[8], 16) if len(f) > 8 else None}
     return table
+
+
+REVB = [int("{:08b}".format(i)[::-1], 2) for i in range(256)]
+
+
+def flip_words(words, flip):
+    """Apply the game decompressor's flip in the OUTPUT domain, exactly as
+    the sprite writer does (flips only exist in that path): hflip (bit0) =
+    bit-reverse every byte in place; vflip (bit1) = the descending pair
+    flush, i.e. per 16-word chunk words 0-7 reversed and 8-15 reversed.
+    Both are involutions. Valid for dictionary streams too: the game
+    bit-reverses BEFORE the dict remap, but bit-reversal commutes with the
+    remap pipeline (property-tested over random tables/data, and all 92
+    extracted flip bins reproduce bit-exactly)."""
+    if not flip:
+        return list(words)
+    ncell = (len(words) + 15) // 16
+    buf = list(words) + [0] * (ncell * 16 - len(words))
+    out = []
+    for c in range(ncell):
+        cell = buf[c * 16:(c + 1) * 16]
+        if flip & 1:
+            cell = [REVB[w & 0xFF] | (REVB[w >> 8] << 8) for w in cell]
+        if flip & 2:
+            cell = [cell[7 - r] for r in range(8)] + \
+                   [cell[8 + 7 - r] for r in range(8)]
+        out += cell
+    return out[:len(words)]
+
+
+def flip_family(path):
+    """-> (own_flip, [(flip, sibling_path)...]) for a BB_SSSS[_fN].bin."""
+    m = BIN_RE.match(os.path.basename(path))
+    if not m:
+        return 0, []
+    base = "%s_%s" % (m.group(1).upper(), m.group(2).upper())
+    own = int(m.group(3) or 0)
+    folder = os.path.dirname(path)
+    sibs = []
+    for f in range(4):
+        if f == own:
+            continue
+        p = os.path.join(folder, base + ("_f%d" % f if f else "") + ".bin")
+        if os.path.exists(p):
+            sibs.append((f, p))
+    return own, sibs
 
 
 def _load_pie():
@@ -207,6 +254,12 @@ def run_gui(path=None):
             zb.pack(side=tk.LEFT)
             zb.bind("<<ComboboxSelected>>", lambda e: self.set_zoom())
             ttk.Button(top, text="Save", command=self.save).pack(side=tk.RIGHT)
+            # keep the pre-baked flip variants (_fN bins) in step with edits:
+            # on save, siblings are regenerated from this bin. Optional -
+            # uncheck to edit a variant independently.
+            self.sync_var = tk.BooleanVar(value=True)
+            ttk.Checkbutton(top, text="Sync flips", variable=self.sync_var
+                            ).pack(side=tk.RIGHT, padx=(0, 8))
             ttk.Button(top, text="Load cfg", command=self.load_config).pack(side=tk.RIGHT, padx=(0, 8))
             ttk.Button(top, text="Save cfg", command=self.save_config).pack(side=tk.RIGHT, padx=2)
             self.info = ttk.Label(self.root, text="Open a .bin from gfx_bins/", padding=(6, 0))
@@ -948,9 +1001,20 @@ def run_gui(path=None):
                 out += bytes((w & 0xFF, w >> 8))
             out = out[:self.nbytes] + bytes(self.nbytes - min(len(out), self.nbytes))
             open(self.path, "wb").write(out)
+            synced = []
+            if self.sync_var.get():
+                own, sibs = flip_family(self.path)
+                plain = flip_words(self.words, own)       # un-flip own
+                for fl, p in sibs:
+                    fw = flip_words(plain, fl)
+                    data = b"".join(bytes((w & 255, w >> 8)) for w in fw)
+                    n = os.path.getsize(p)
+                    open(p, "wb").write(data[:n] + bytes(max(0, n - len(data))))
+                    synced.append(os.path.basename(p))
             self.mark_dirty(False)
-            self.info.config(text="Saved %s  (palette pins live in the config: Save cfg)"
-                             % os.path.basename(self.path))
+            self.info.config(text="Saved %s%s" % (
+                os.path.basename(self.path),
+                "  + synced flips: " + ", ".join(synced) if synced else ""))
 
     root = tk.Tk()
     run_gui.app = App(root)          # exposed for scripted testing

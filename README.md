@@ -92,6 +92,23 @@ Every bin is **tagged with the stages that load it**: the manifest's
 sequence table) shows in the info bar on open, and **Browse bins...**
 lists all 603 bins with their VRAM destination and stage tags.
 
+### Flip variants (`_f1`/`_f2`/`_f3` bins)
+
+The original game can decompress a graphics block plain or **with every
+tile mirrored in place** — the load event's flip parameter selects
+horizontal (`f1`), vertical (`f2`) or both (`f3`), applied uniformly to
+the whole block (there's no per-tile flip in the data; full image mirrors
+are finished by the tilemap, since the PCE BAT has no flip bits). Each
+flip the game actually requests is extracted as its own pre-flipped bin —
+only evidenced variants exist, not blanket copies.
+
+The editor's **Sync flips** option (on by default) keeps a family
+consistent: saving any member regenerates its siblings with the exact
+transform the game uses, so an edit to the plain bin lands mirrored in
+the flipped ones (or vice versa). Untick it to edit a variant
+independently — e.g. to make the "mirrored" copy deliberately different
+art.
+
 ## Credits
 
 Reverse engineering, hacks and tools: **Turboxray**, 2026.
