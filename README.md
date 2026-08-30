@@ -11,7 +11,7 @@ repo root; everything is built or extracted from it.
 
 | build | what you get |
 |---|---|
-| `go.bat` / `build_all.bat` | The **colour hack + taller playfield** (v1.0): restores pixel detail hidden by duplicate palette entries, and offers four window heights (stock ~197 / 208 / 216 / full 224 lines). `make_patches.bat [ver]` produces distributable IPS/xdelta patches + zip. |
+| `go.bat` / `build_all.bat` | The **colour hack + taller playfield** (v1.0): restores pixel detail hidden by duplicate palette entries, and offers four window heights (stock ~197 / 208 / 216 / full 224 lines). |
 | `build_sf2.bat` | The **SF2-mapper expansion** (2.5MB): every graphics stream in the game stored uncompressed in expansion banks and served by a load hook instead of Konami's slow decompressor — **eliminates the game's chronic dropped frames** (stock: 1 frame in 9 lost to re-decompressing the water; this build: measured 0 lag frames / 60.0 eff in gameplay). Requires an SF2-mapper-capable emulator (Mesen2) or flash cart. |
 
 ## Requirements
