@@ -1,9 +1,9 @@
 @echo off
-rem Regenerate the asset include from the trace corpus, then build the
-rem 2.5 MB SF2-mapper expansion ROM.
+rem Extract assets from the ROM, build
+rem the 2.5 MB SF2-mapper expansion, blank the dead original gfx region.
 set PATH=%PATH%;c:\huc\bin
 
-python pce_gfx_export.py Parodius_Da__original.pce
+python pce_gfx.py extract Parodius_Da__original.pce
 if errorlevel 1 exit /b 1
 
 (echo ; full 224 default)> variant.inc
@@ -13,5 +13,5 @@ if not exist Parodius_SF2.pce (
   echo FAILED - see build_Parodius_SF2.log
   exit /b 1
 )
-python zero_upper.py
+python pce_gfx.py zero
 echo built Parodius_SF2.pce

@@ -1,33 +1,30 @@
 #!/usr/bin/env python3
-"""Offline decoder for Parodius Da!'s compressed graphics (engine $C25C).
+"""SF2-build graphics tool for Parodius Da! (J).
 
-Stream layout (from the bank-$01 disassembly, see anim-engine.md):
-  src+0                  header:  bit7 = sprite-layout flush, &$7F = dict length
-  src+1 .. src+dictlen   dictionary (chunky->planar conversion table), absent if 0
-  src+1+dictlen ..       CONTROL stream (tokens below) -> byte stream -> 128-byte
-                         buffer at WRAM $3C80 -> flushed raw or planar-converted
+  pce_gfx.py extract <rom> [manifest]   decompress every stream listed in
+      stream_manifest.txt from the ROM into gfx_bins/ and generate
+      Parodius_SF2_assets.inc (expansion asset banks + lookup tables)
+  pce_gfx.py zero [pce]                 blank the dead original graphics
+      region ($080000-$0FFFFF) in the assembled image (default
+      Parodius_SF2.pce)
 
-Control tokens (byte counts are of the OUTPUT stream):
-  $00 cnt fix L0..Ln     cnt words of (fix, literal)      (cnt=0 -> 256)
-  $01 lo hi b            b repeated cnt16 times
-  $02 cnt b1 b2          word (b1,b2) repeated cnt        (cnt=0 -> 256)
-  $03-$3F b              b repeated n times
-  $40-$7F                (n&$3F) zero bytes               (n=0 -> 256)
-  $80 lo hi L...         cnt16 literal bytes
-  $81-$BF L...           (n&$3F) literal bytes
-  $C0-$FD L...           (n&$3F) words of (00, literal)   (n=0 -> 256)
-  $FE cnt b1 b2 b3 b4    4-byte pattern repeated cnt      (cnt=0 -> 256)
-  $FF                    end of event
-
-Usage:
-  pce_gfx_decode.py <rom> <bank> <src>          decode one block, hex to stdout
-  pce_gfx_decode.py <rom> --verify <trace.txt>  check every ROMDEC entry of a
-                                                parodius_gfxtrace.lua log against
-                                                its captured VRAM ground truth
-NOTE: raw mode (dictlen==0) is exact; the planar/dictionary flush conversions
-are NOT implemented yet - verify mode reports those separately so the corpus
-tells us what to implement next.
+Contains a bit-exact reimplementation of the game's graphics decompressor
+(verified against live VRAM captures), including the flip variants the
+sprite writer applies at decompress time. See stream_manifest.txt for the
+full stream map.
 """
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+FIRST_BANK = 0x80          # LUT bank; assets from $81
+BANK_SIZE = 0x2000
+
+
+# ----------------------------------------------------------------------------
+# Decompressor (bit-exact reimplementation)
+# ----------------------------------------------------------------------------
 import re
 import sys
 
@@ -230,22 +227,137 @@ def verify(rom, trace_path):
           % (len(seen), stats.get("ok", 0), stats.get("bad", 0)))
 
 
+# ----------------------------------------------------------------------------
+# Asset extraction / SF2 expansion generation
+# ----------------------------------------------------------------------------
+def read_manifest(path):
+    entries = []
+    for ln in open(path):
+        ln = ln.strip()
+        if not ln or ln.startswith(";"):
+            continue
+        f = ln.split()
+        entries.append({"bank": int(f[0], 16), "src": int(f[1], 16),
+                        "p1": int(f[2], 16), "dst": int(f[6], 16)})
+    return entries
+
+
+def extract(argv):
+    rom = open(argv[0], "rb").read()
+    manifest = argv[1] if len(argv) > 1 else os.path.join(HERE, "stream_manifest.txt")
+    entries = read_manifest(manifest)
+
+    bindir = os.path.join(HERE, "gfx_bins")
+    os.makedirs(bindir, exist_ok=True)
+
+    assets = []
+    for e in entries:
+        hdr, dic, out, clen = decode_block_full(rom, e["bank"], e["src"], e["p1"])
+        name = "%02X_%04X" % (e["bank"], e["src"])
+        if e["p1"]:
+            name += "_f%d" % e["p1"]
+        with open(os.path.join(bindir, name + ".bin"), "wb") as f:
+            f.write(out)
+        assets.append({"bank": e["bank"], "src": e["src"], "p1": e["p1"],
+                       "name": name, "len": len(out), "dst": e["dst"]})
+
+    # first-fit decreasing into expansion banks (no block crosses a bank)
+    assets.sort(key=lambda a: -a["len"])
+    banks = []
+    for a in assets:
+        for bi, b in enumerate(banks):
+            if b[0] + a["len"] <= BANK_SIZE:
+                a["ebank"] = FIRST_BANK + 1 + bi
+                a["eoff"] = b[0]
+                b[1].append(a)
+                banks[bi] = (b[0] + a["len"], b[1])
+                break
+        else:
+            a["ebank"] = FIRST_BANK + 1 + len(banks)
+            a["eoff"] = 0
+            banks.append((a["len"], [a]))
+    assets.sort(key=lambda a: (a["ebank"], a["eoff"]))
+
+    def page_of(ebank):
+        return (ebank - 0x40) // 0x40      # $80-$BF -> 1, $C0-$FF -> 2, ...
+
+    buckets = {}
+    for a in assets:
+        buckets.setdefault(a["bank"], []).append(a)
+    assert len(buckets) <= 64, "too many event banks for the bucket directory"
+    for bk, lst in buckets.items():
+        assert len(lst) <= 255, "bucket $%02X exceeds 255 streams" % bk
+
+    with open(os.path.join(HERE, "Parodius_SF2_assets.inc"), "w", newline="\n") as f:
+        w = f.write
+        w(";==================================================================\n")
+        w("; AUTO-GENERATED by pce_gfx_export.py from stream_manifest.txt -\n")
+        w("; do not edit by hand.\n")
+        w(";\n")
+        w("; Layout: bucket directory keyed by event bank -> per-bucket record\n")
+        w("; list: [count] then count x 8-byte records\n")
+        w(";   +0 src.lo  +1 src.hi  +2 (p1<<4)|sf2page  +3 asset WINDOW bank\n")
+        w(";   +4 addr.lo +5 addr.hi +6 len.lo           +7 len.hi\n")
+        w("; Flip variants (p1 1-3) are separate pre-flipped assets - match\n")
+        w("; includes p1, so nothing decompresses at runtime for known content.\n")
+        w(";==================================================================\n\n")
+        w("; LUT bank is mapped at MPR3 ($6000) by the hook; assets at MPR4 ($8000).\n")
+        w("  .bank $%02X, \"asset LUTs\"\n    .page 3\n    .org $6000\n\n" % FIRST_BANK)
+        bks = sorted(buckets)
+        w("sf2.bucket.count = %d\n\n" % len(bks))
+        w("sf2.bucket.bank:\n")
+        for bk in bks:
+            w("    .db $%02X    ; %d streams\n" % (bk, len(buckets[bk])))
+        w("\nsf2.bucket.ptr.lo:\n")
+        for bk in bks:
+            w("    .db low(sf2.bucket.%02X)\n" % bk)
+        w("\nsf2.bucket.ptr.hi:\n")
+        for bk in bks:
+            w("    .db high(sf2.bucket.%02X)\n" % bk)
+        for bk in bks:
+            w("\nsf2.bucket.%02X:\n    .db %d\n" % (bk, len(buckets[bk])))
+            for a in buckets[bk]:
+                w("    .db $%02X,$%02X, $%02X,$%02X, low(asset.%s),high(asset.%s), $%02X,$%02X"
+                  % (a["src"] & 0xFF, a["src"] >> 8,
+                     (a["p1"] << 4) | page_of(a["ebank"]),
+                     0x40 | (a["ebank"] & 0x3F), a["name"], a["name"],
+                     a["len"] & 0xFF, a["len"] >> 8))
+                w("   ; -> dst $%04X.w p1=%d\n" % (a["dst"], a["p1"]))
+        w("\n")
+        cur = None
+        for a in assets:
+            if a["ebank"] != cur:
+                cur = a["ebank"]
+                w("\n;------------------------------------------------------------------\n")
+                w("  .bank $%02X, \"assets %02X\"\n    .page 4\n    .org $8000\n\n" % (cur, cur))
+            w("asset.%s:                ; %d bytes -> dst $%04X.w\n"
+              % (a["name"], a["len"], a["dst"]))
+            w("  .incbin \"gfx_bins/%s.bin\"\n" % a["name"])
+
+    used = sum(b[0] for b in banks)
+    print("wrote %d bins (%d bytes) into banks $%02X-$%02X + LUT bank $%02X"
+          % (len(assets), used, FIRST_BANK + 1, FIRST_BANK + len(banks), FIRST_BANK))
+
+
+# ----------------------------------------------------------------------------
+# Post-build: blank the dead original graphics region
+# ----------------------------------------------------------------------------
+def zero(argv):
+    p = argv[0] if argv else os.path.join(HERE, "Parodius_SF2.pce")
+    rom = bytearray(open(p, "rb").read())
+    rom[0x080000:0x100000] = bytes(0x80000)
+    open(p, "wb").write(rom)
+    print("zeroed $080000-$0FFFFF (original upper 512K)")
+
+
 def main():
-    if len(sys.argv) < 3:
+    if len(sys.argv) >= 3 and sys.argv[1] == "extract":
+        extract(sys.argv[2:])
+    elif len(sys.argv) >= 2 and sys.argv[1] == "zero":
+        zero(sys.argv[2:])
+    else:
         print(__doc__)
-        return
-    rom = open(sys.argv[1], "rb").read()
-    if sys.argv[2] == "--verify":
-        verify(rom, sys.argv[3])
-        return
-    bank, src = int(sys.argv[2], 16), int(sys.argv[3], 16)
-    hdr, dic, out = decode_block(rom, bank, src)
-    print("header $%02X  (sprite=%d, dictlen=%d)  output %d bytes"
-          % (hdr, hdr >> 7, hdr & 0x7F, len(out)))
-    if dic:
-        print("dict:", dic.hex(" "))
-    for i in range(0, len(out), 16):
-        print("%04X: %s" % (i, out[i:i + 16].hex(" ")))
+        sys.exit(1)
 
 
 if __name__ == "__main__":
