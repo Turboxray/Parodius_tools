@@ -154,7 +154,12 @@ def run_gui(path=None):
             self.dirty = False
             self.table = load_table()
             self.meta = None
+            self.bins = {}            # per-bin state: format, cell pin map, default pal
+            self.cur = None           # self.bins entry for the open bin
             self._build()
+            cfg = os.path.join(HERE, "gfx_editor_config.json")
+            if os.path.exists(cfg):
+                self.load_config(cfg, quiet=True)
             if path:
                 self.open_file(path)
 
@@ -202,6 +207,8 @@ def run_gui(path=None):
             zb.pack(side=tk.LEFT)
             zb.bind("<<ComboboxSelected>>", lambda e: self.set_zoom())
             ttk.Button(top, text="Save", command=self.save).pack(side=tk.RIGHT)
+            ttk.Button(top, text="Load cfg", command=self.load_config).pack(side=tk.RIGHT, padx=(0, 8))
+            ttk.Button(top, text="Save cfg", command=self.save_config).pack(side=tk.RIGHT, padx=2)
             self.info = ttk.Label(self.root, text="Open a .bin from gfx_bins/", padding=(6, 0))
             self.info.pack(side=tk.TOP, fill=tk.X)
 
@@ -246,8 +253,10 @@ def run_gui(path=None):
                 add.config(state=tk.DISABLED)
             ttk.Button(bb, text="-> cell", width=7, command=self.pal_to_cell).pack(side=tk.LEFT, padx=2)
             ttk.Button(bb, text="-> all", width=6, command=self.pal_to_all).pack(side=tk.LEFT, padx=2)
-            ttk.Button(bb, text="Remove", command=self.remove_palette).pack(side=tk.LEFT, padx=2)
-            ttk.Button(bb, text="Clear", command=self.clear_palettes).pack(side=tk.LEFT, padx=2)
+            bb2 = ttk.Frame(pf); bb2.pack(fill=tk.X, pady=2)
+            ttk.Button(bb2, text="Unpin here", command=self.unpin_palette).pack(side=tk.LEFT, padx=2)
+            ttk.Button(bb2, text="Clear pins here", command=self.clear_pins).pack(side=tk.LEFT, padx=2)
+            ttk.Button(bb2, text="Drop import", command=self.drop_import).pack(side=tk.LEFT, padx=2)
 
             self.root.bind("<Control-s>", lambda e: self.save())
             self.root.bind("<Control-z>", lambda e: self.undo())
@@ -288,35 +297,27 @@ def run_gui(path=None):
             self.meta = self.table.get((int(m.group(1), 16), int(m.group(2), 16),
                                         int(m.group(3) or 0))) if m else None
             self.words = [data[i] | (data[i + 1] << 8) for i in range(0, len(data) - 1, 2)]
-            self.palettes = self._builtin_slots()
-            self.active_pal = 0
-            self.palmap = {"tile": {}, "sprite": {}}
-            side = self.sidecar_path()
-            if os.path.exists(side):
-                try:
-                    sc = json.load(open(side))
-                    self.fmt = sc.get("format", "tile") if sc.get("format") in FMT else "tile"
-                    for pl in sc.get("palettes", []):
-                        self.palettes.append({"label": pl["label"], "colors": pl["colors"]})
-                    # older sidecars had fewer builtin slots: shift imports
-                    shift = NBUILTIN - sc.get("nbuiltin", 1)
-                    for k in ("tile", "sprite"):
-                        m = {}
-                        for c, s in sc.get("map", {}).get(k, {}).items():
-                            s = int(s)
-                            if s >= NBUILTIN - shift:
-                                s += shift
-                            if 0 <= s < len(self.palettes):
-                                m[str(c)] = s
-                        self.palmap[k] = m
-                    d = int(sc.get("default", 0))
-                    if d >= NBUILTIN - shift:
-                        d += shift
-                    if 0 <= d < len(self.palettes):
-                        self.active_pal = d
-                except Exception as ex:
-                    messagebox.showwarning("Sidecar", "Couldn't read %s:\n%s"
-                                           % (os.path.basename(side), ex))
+            # session palette pool persists across bins; per-bin state lives
+            # in self.bins (created here, filled by pins/format/default)
+            name = os.path.basename(p)
+            st = self.bins.get(name)
+            if st is None:
+                st = {"format": self.fmt, "map": {"tile": {}, "sprite": {}},
+                      "default": None}
+                side = self.sidecar_path()
+                if os.path.exists(side):        # legacy per-bin sidecar
+                    try:
+                        self._migrate_sidecar(json.load(open(side)), st)
+                    except Exception as ex:
+                        messagebox.showwarning("Sidecar", "Couldn't read %s:\n%s"
+                                               % (os.path.basename(side), ex))
+                self.bins[name] = st
+            self.cur = st
+            self.fmt = st["format"] if st["format"] in FMT else "tile"
+            self.palmap = st["map"]
+            d = st.get("default")
+            if d is not None and 0 <= d < len(self.palettes):
+                self.active_pal = d
             self.fmt_var.set(self.fmt)
             self.sel = None
             self.undo_stack = []
@@ -371,6 +372,113 @@ def run_gui(path=None):
 
         def sidecar_path(self):
             return self.path + ".palmap.json" if self.path else None
+
+        def _migrate_sidecar(self, sc, st):
+            """Absorb a legacy <bin>.palmap.json into the session pool + st."""
+            st["format"] = sc.get("format", "tile")
+            nb_old = sc.get("nbuiltin", 1)
+            remap = {}
+            for j, pl in enumerate(sc.get("palettes", [])):
+                labels = [q["label"] for q in self.palettes]
+                if pl["label"] in labels:
+                    remap[nb_old + j] = labels.index(pl["label"])
+                else:
+                    self.palettes.append({"label": pl["label"], "colors": pl["colors"]})
+                    remap[nb_old + j] = len(self.palettes) - 1
+
+            def fix(s):
+                s = int(s)
+                if s in remap:
+                    return remap[s]
+                return s if 0 <= s < min(nb_old, NBUILTIN) else None
+            for k in ("tile", "sprite"):
+                m = {}
+                for c, s in sc.get("map", {}).get(k, {}).items():
+                    ns = fix(s)
+                    if ns is not None:
+                        m[str(c)] = ns
+                st["map"][k] = m
+            if sc.get("default") is not None:
+                st["default"] = fix(sc["default"])
+            self.refresh_palettes()
+
+        # ---------- config (session palettes + all per-bin pin maps) ----------
+        def save_config(self):
+            p = filedialog.asksaveasfilename(
+                initialdir=HERE, initialfile="gfx_editor_config.json",
+                defaultextension=".json", title="Save config",
+                filetypes=[("json", "*.json"), ("all", "*.*")])
+            if not p:
+                return
+            cfg = {"nbuiltin": NBUILTIN,
+                   "palettes": [{"label": q["label"], "colors": q["colors"]}
+                                for q in self.palettes[NBUILTIN:]],
+                   "bins": self.bins}
+            with open(p, "w") as f:
+                json.dump(cfg, f, indent=1)
+            self.info.config(text="Saved config %s (%d palettes, %d graphic blocks)"
+                             % (os.path.basename(p), len(self.palettes) - NBUILTIN,
+                                len(self.bins)))
+
+        def load_config(self, p=None, quiet=False):
+            if p is None:
+                p = filedialog.askopenfilename(
+                    initialdir=HERE, title="Load config",
+                    filetypes=[("json", "*.json"), ("all", "*.*")])
+                if not p:
+                    return
+            try:
+                cfg = json.load(open(p))
+                shift = NBUILTIN - cfg.get("nbuiltin", NBUILTIN)
+                pool = self._builtin_slots() + \
+                    [{"label": q["label"], "colors": q["colors"]}
+                     for q in cfg.get("palettes", [])]
+                bins = {}
+                for name, st in cfg.get("bins", {}).items():
+                    fixmap = {}
+                    for k in ("tile", "sprite"):
+                        m = {}
+                        for c, s in st.get("map", {}).get(k, {}).items():
+                            s = int(s)
+                            if s >= NBUILTIN - shift:
+                                s += shift
+                            if 0 <= s < len(pool):
+                                m[str(c)] = s
+                        fixmap[k] = m
+                    d = st.get("default")
+                    if d is not None:
+                        d = int(d)
+                        if d >= NBUILTIN - shift:
+                            d += shift
+                        if not (0 <= d < len(pool)):
+                            d = None
+                    bins[name] = {"format": st.get("format", "tile"),
+                                  "map": fixmap, "default": d}
+            except Exception as ex:
+                messagebox.showerror("Config", "Couldn't load %s:\n%s" % (p, ex))
+                return
+            self.palettes, self.bins = pool, bins
+            self.active_pal = 0
+            if self.path:
+                name = os.path.basename(self.path)
+                st = self.bins.setdefault(name, {"format": self.fmt,
+                                                 "map": {"tile": {}, "sprite": {}},
+                                                 "default": None})
+                self.cur = st
+                self.palmap = st["map"]
+                if st["format"] in FMT and st["format"] != self.fmt:
+                    self.fmt = st["format"]
+                    self.fmt_var.set(self.fmt)
+                    self.decode_all()
+                if st.get("default") is not None:
+                    self.active_pal = st["default"]
+            self.refresh_palettes()
+            if self.words:
+                self.render_sheet()
+            self.render_cell()
+            if not quiet:
+                self.info.config(text="Loaded config %s (%d palettes, %d graphic blocks)"
+                                 % (os.path.basename(p), len(pool) - NBUILTIN, len(bins)))
 
         def set_title(self):
             name = os.path.basename(self.path) if self.path else "(no file)"
@@ -493,7 +601,6 @@ def run_gui(path=None):
             self.render_cell_on_sheet(ci)
             if ci == self.sel:
                 self.render_cell()
-            self.mark_dirty()
 
         def pal_to_cell(self):
             if self.sel is not None:
@@ -504,9 +611,10 @@ def run_gui(path=None):
                 return
             self.palmap[self.fmt] = {} if self.active_pal == 0 else \
                 {str(ci): self.active_pal for ci in range(self.ncells())}
+            if self.cur:
+                self.cur["map"] = self.palmap
             self.render_sheet()
             self.render_cell()
-            self.mark_dirty()
 
         # ---------- cell editor ----------
         def ed_px(self):
@@ -613,6 +721,8 @@ def run_gui(path=None):
         # ---------- format / zoom ----------
         def set_fmt(self, keep_undo=False):
             self.fmt = self.fmt_var.get()
+            if self.cur:
+                self.cur["format"] = self.fmt
             if not keep_undo:
                 self.undo_stack = []       # pixel coords are format-specific
             self.sel = None
@@ -648,48 +758,72 @@ def run_gui(path=None):
             if self.active_pal == self.pal_var.get():
                 return
             self.active_pal = self.pal_var.get()
+            if self.cur:
+                self.cur["default"] = self.active_pal
             if self.words:
                 self.render_sheet()
             self.render_cell()
 
-        def remove_palette(self):
+        def unpin_palette(self):
+            """Unpin the selected palette from THIS graphic block's cells.
+            The palette stays in the session for other blocks."""
+            i = self.pal_var.get()
+            for m in self.palmap.values():
+                for k in list(m):
+                    if m[k] == i:
+                        del m[k]
+            if self.cur and self.cur.get("default") == i:
+                self.cur["default"] = None
+            if self.words:
+                self.render_sheet()
+            self.render_cell()
+
+        def clear_pins(self):
+            """Clear every palette pin on THIS graphic block (both views).
+            Imported palettes stay in the session."""
+            if not any(self.palmap.values()):
+                return
+            for m in self.palmap.values():
+                m.clear()
+            if self.words:
+                self.render_sheet()
+            self.render_cell()
+
+        def drop_import(self):
+            """Remove an imported palette from the whole session (every
+            graphic block's pins to it are dropped)."""
             i = self.pal_var.get()
             if i < NBUILTIN:
-                return                      # builtin greys are permanent
+                messagebox.showinfo("Drop", "The builtin greys can't be dropped.")
+                return
+            if not messagebox.askyesno("Drop import", "Remove '%s' from the session "
+                                       "(unpins it from ALL graphic blocks)?"
+                                       % self.palettes[i]["label"].strip()):
+                return
             del self.palettes[i]
-            for m in self.palmap.values():  # remap cells: gone -> grey, shift the rest
+            maps = [m for st in self.bins.values() for m in st["map"].values()]
+            if self.cur is None:            # unbound pre-open palmap
+                maps += list(self.palmap.values())
+            for m in maps:
                 for k in list(m):
                     if m[k] == i:
                         del m[k]
                     elif m[k] > i:
                         m[k] -= 1
-            self.active_pal = 0
+            for st in self.bins.values():
+                d = st.get("default")
+                if d == i:
+                    st["default"] = None
+                elif d is not None and d > i:
+                    st["default"] = d - 1
+            if self.active_pal == i:
+                self.active_pal = 0
+            elif self.active_pal > i:
+                self.active_pal -= 1
             self.refresh_palettes()
             if self.words:
                 self.render_sheet()
             self.render_cell()
-            self.mark_dirty()
-
-        def clear_palettes(self):
-            """Drop every imported palette (builtin greys stay), including
-            any cell mappings that pointed at them."""
-            if len(self.palettes) <= NBUILTIN:
-                return
-            if not messagebox.askyesno("Clear", "Remove all %d imported palettes "
-                                       "(and their cell mappings)?"
-                                       % (len(self.palettes) - NBUILTIN)):
-                return
-            del self.palettes[NBUILTIN:]
-            for m in self.palmap.values():
-                for k in list(m):
-                    if m[k] >= NBUILTIN:
-                        del m[k]
-            self.active_pal = 0
-            self.refresh_palettes()
-            if self.words:
-                self.render_sheet()
-            self.render_cell()
-            self.mark_dirty()
 
         def add_palette(self):
             if pie is None:
@@ -768,11 +902,12 @@ def run_gui(path=None):
                     label, cols, key = slices[r]
                     self.palettes.append({"label": label, "colors": cols})
                 self.active_pal = len(self.palettes) - 1
+                if self.cur:
+                    self.cur["default"] = self.active_pal
                 self.refresh_palettes()
                 if self.words:
                     self.render_sheet()
                 self.render_cell()
-                self.mark_dirty()
                 win.destroy()
 
             def add_slices():
@@ -799,16 +934,9 @@ def run_gui(path=None):
                 out += bytes((w & 0xFF, w >> 8))
             out = out[:self.nbytes] + bytes(self.nbytes - min(len(out), self.nbytes))
             open(self.path, "wb").write(out)
-            sc = {"format": self.fmt, "nbuiltin": NBUILTIN,
-                  "default": self.active_pal,
-                  "palettes": [{"label": p["label"], "colors": p["colors"]}
-                               for p in self.palettes[NBUILTIN:]],
-                  "map": self.palmap}
-            with open(self.sidecar_path(), "w") as f:
-                json.dump(sc, f, indent=1)
             self.mark_dirty(False)
-            self.info.config(text="Saved %s + %s" % (os.path.basename(self.path),
-                                                     os.path.basename(self.sidecar_path())))
+            self.info.config(text="Saved %s  (palette pins live in the config: Save cfg)"
+                             % os.path.basename(self.path))
 
     root = tk.Tk()
     run_gui.app = App(root)          # exposed for scripted testing

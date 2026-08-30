@@ -77,12 +77,16 @@ raw VRAM words). View any bin as **8×8 tiles or 16×16 sprite cells**
 it (right-click eyedrops, Ctrl+Z undo, Ctrl+S save). Saved bins feed
 straight into the SF2 build.
 
-Palettes: greyscale by default, plus any 16-colour subpalette imported
-from `palette.inc` / `palette_org.inc`; palettes are **mapped per cell**
-(right-click a cell in the sheet to paint it with the active palette).
-The imported palettes and the cell mapping persist in a
-`<bin>.palmap.json` sidecar — display only, the bin's colour indices are
-untouched.
+Palettes: builtin greys (16-step, 3bpp and reverses), plus any 16-colour
+subpalette imported from `palette.inc` / `palette_org.inc` (double-click a
+block to import all its slices). Imports are **session-wide** — they stay
+available as you move between graphic blocks — while palette pins
+(right-click a cell) plus the view format and default palette are
+**per graphic block**: *Unpin here* / *Clear pins here* touch only the
+current block; *Drop import* removes a palette from the whole session.
+**Save cfg / Load cfg** persists all of it in one config file
+(`gfx_editor_config.json`, auto-loaded on start if present) — display
+only, the bin's colour indices are untouched.
 
 Every bin is **tagged with the stages that load it**: the manifest's
 `stages` column (from full-playthrough traces + the game's own `$C5BA`
