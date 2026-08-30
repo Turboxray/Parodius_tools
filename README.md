@@ -69,6 +69,26 @@ you edit; clicking a swatch selects that slot in both panels.
 structural map — so the true original colours are always available for
 reference and for the editor's change-count tags.
 
+## Graphics editor
+
+`gfx_editor.py` (Tkinter) edits the extracted graphics (`gfx_bins/*.bin`,
+raw VRAM words). View any bin as **8×8 tiles or 16×16 sprite cells**
+(toggle — the format isn't stored in the data), click a cell to pixel-edit
+it (right-click eyedrops, Ctrl+Z undo, Ctrl+S save). Saved bins feed
+straight into the SF2 build.
+
+Palettes: greyscale by default, plus any 16-colour subpalette imported
+from `palette.inc` / `palette_org.inc`; palettes are **mapped per cell**
+(right-click a cell in the sheet to paint it with the active palette).
+The imported palettes and the cell mapping persist in a
+`<bin>.palmap.json` sidecar — display only, the bin's colour indices are
+untouched.
+
+Every bin is **tagged with the stages that load it**: the manifest's
+`stages` column (from full-playthrough traces + the game's own `$C5BA`
+sequence table) shows in the info bar on open, and **Browse bins...**
+lists all 603 bins with their VRAM destination and stage tags.
+
 ## Credits
 
 Reverse engineering, hacks and tools: **Turboxray**, 2026.
