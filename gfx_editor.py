@@ -760,32 +760,34 @@ def run_gui(path=None):
             lb.bind("<<ListboxSelect>>", preview)
 
             def add_rows(rows):
-                added = False
+                if not rows:
+                    messagebox.showinfo("Add", "Select one or more rows first.",
+                                        parent=win)
+                    return
                 for r in rows:
                     label, cols, key = slices[r]
                     self.palettes.append({"label": label, "colors": cols})
-                    added = True
-                if added:
-                    self.active_pal = len(self.palettes) - 1
-                    self.refresh_palettes()
-                    if self.words:
-                        self.render_sheet()
-                    self.render_cell()
-                    self.mark_dirty()
+                self.active_pal = len(self.palettes) - 1
+                self.refresh_palettes()
+                if self.words:
+                    self.render_sheet()
+                self.render_cell()
+                self.mark_dirty()
                 win.destroy()
 
-            def add(ev=None):
+            def add_slices():
                 add_rows(list(lb.curselection()))
 
-            def add_block():
+            def add_block(ev=None):
                 # every slice of every block that has a selected row
                 keys = {slices[r][2] for r in lb.curselection()}
                 add_rows([i for i, s in enumerate(slices) if s[2] in keys])
-            lb.bind("<Double-1>", add)
+            lb.bind("<Double-1>", add_block)
             bar2 = ttk.Frame(win); bar2.pack(pady=4)
-            ttk.Button(bar2, text="Add selected", command=add).pack(side=tk.LEFT, padx=4)
             ttk.Button(bar2, text="Add whole block", command=add_block).pack(side=tk.LEFT, padx=4)
-            ttk.Label(bar2, text="(Ctrl/Shift+click selects several)").pack(side=tk.LEFT, padx=4)
+            ttk.Button(bar2, text="Add selected slices", command=add_slices).pack(side=tk.LEFT, padx=4)
+            ttk.Label(bar2, text="(double-click = whole block; Ctrl/Shift+click selects several)"
+                      ).pack(side=tk.LEFT, padx=4)
             load(os.path.join(HERE, "palette.inc"))
 
         # ---------- save ----------
