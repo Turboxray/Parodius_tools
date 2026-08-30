@@ -93,6 +93,18 @@ def flip_words(words, flip):
     return out[:len(words)]
 
 
+def load_areas():
+    """area_names.txt -> {stage id: name} for stage-tag readability."""
+    areas = {}
+    path = os.path.join(HERE, "area_names.txt")
+    if os.path.exists(path):
+        for ln in open(path):
+            f = ln.split(None, 1)
+            if len(f) == 2 and not ln.startswith(";"):
+                areas[f[0].upper()] = f[1].strip()
+    return areas
+
+
 def flip_family(path):
     """-> (own_flip, [(flip, sibling_path)...]) for a BB_SSSS[_fN].bin."""
     m = BIN_RE.match(os.path.basename(path))
@@ -398,11 +410,16 @@ def run_gui(path=None):
                 messagebox.showinfo("Browse", "No gfx_bins/ - run the extract first.")
                 return
             win = tk.Toplevel(self.root); win.title("gfx_bins - stage tags")
-            win.geometry("640x520"); win.transient(self.root)
+            win.geometry("860x520"); win.transient(self.root)
+            areas = load_areas()
+            bar = ttk.Frame(win, padding=4); bar.pack(side=tk.TOP, fill=tk.X)
+            ttk.Label(bar, text="Stage filter (id or name text):").pack(side=tk.LEFT)
+            filt_var = tk.StringVar()
+            ttk.Entry(bar, textvariable=filt_var, width=24).pack(side=tk.LEFT, padx=4)
             body = ttk.Frame(win); body.pack(fill=tk.BOTH, expand=True)
-            cols = ("file", "words", "tiles", "dst", "flip", "stages")
-            widths = {"file": 140, "words": 60, "tiles": 60, "dst": 70,
-                      "flip": 40, "stages": 200}
+            cols = ("file", "fmt", "words", "tiles", "dst", "flip", "stages", "area")
+            widths = {"file": 130, "fmt": 36, "words": 55, "tiles": 55, "dst": 60,
+                      "flip": 36, "stages": 130, "area": 220}
             tv = ttk.Treeview(body, columns=cols, show="headings")
             for c in cols:
                 tv.heading(c, text=c)
@@ -410,18 +427,36 @@ def run_gui(path=None):
             vsb = ttk.Scrollbar(body, orient=tk.VERTICAL, command=tv.yview)
             tv.configure(yscrollcommand=vsb.set)
             vsb.pack(side=tk.RIGHT, fill=tk.Y); tv.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            for fn in sorted(os.listdir(BINDIR)):
-                m = BIN_RE.match(fn)
-                if not m:
-                    continue
-                key = (int(m.group(1), 16), int(m.group(2), 16), int(m.group(3) or 0))
-                t = self.table.get(key)
-                words = os.path.getsize(os.path.join(BINDIR, fn)) // 2
-                tv.insert("", tk.END, iid=fn, values=(
-                    fn, words, "%.1f" % (words / 16.0),
-                    "$%04X" % t["dst"] if t else "?",
-                    "f%d" % key[2] if key[2] else "",
-                    (t["stages"] or "static table only") if t else "not in table"))
+
+            def area_text(stages):
+                names = [areas[s] for s in stages.split(",") if s in areas]
+                return "; ".join(names[:2]) + (" ..." if len(names) > 2 else "")
+
+            def populate(*_):
+                q = filt_var.get().strip().lower()
+                tv.delete(*tv.get_children())
+                for fn in sorted(os.listdir(BINDIR)):
+                    m = BIN_RE.match(fn)
+                    if not m:
+                        continue
+                    key = (int(m.group(1), 16), int(m.group(2), 16), int(m.group(3) or 0))
+                    t = self.table.get(key)
+                    stages = (t["stages"] if t else "") or ""
+                    aname = area_text(stages)
+                    if q:
+                        ids = stages.lower().split(",")
+                        if q not in ids and q not in aname.lower():
+                            continue
+                    words = os.path.getsize(os.path.join(BINDIR, fn)) // 2
+                    tv.insert("", tk.END, iid=fn, values=(
+                        fn, t["content"] if t else "?", words,
+                        "%.1f" % (words / 16.0),
+                        "$%04X" % t["dst"] if t else "?",
+                        "f%d" % key[2] if key[2] else "",
+                        (stages or "static table only") if t else "not in table",
+                        aname))
+            filt_var.trace_add("write", populate)
+            populate()
 
             def pick(ev=None):
                 sel = tv.selection()
