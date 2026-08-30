@@ -288,8 +288,11 @@ def run_gui():
         def palmap(self):
             return self.app._palmap()
 
+        def pal(self):
+            return self.app.pal_for(self)
+
         def refresh_nav(self):
-            pal = self.app.pal
+            pal = self.pal()
             if not pal:
                 return
             self._nav_keys = order_keys(pal.blocks, self.app.sortkeys)
@@ -325,7 +328,7 @@ def run_gui():
             self.app.browse(self)
 
         def load(self, bank, org):
-            b = self.app.pal.get(bank, org)
+            b = self.pal().get(bank, org)
             if not b:
                 return
             self.key = (bank, org)
@@ -402,15 +405,14 @@ def run_gui():
             self.colors[self.sel] = self.staged
             self.draw(); self.stage()
 
-        def commit(self):
-            if self.key:
-                self.app.pal.set_colors(self.key[0], self.key[1], self.colors)
 
     class App:
         def __init__(self, root):
             self.root = root
             root.title("Parodius palette.inc editor")
-            self.pal = None
+            self.pal_a = None
+            self.pal_b = None         # None = panel B shares panel A's source
+            self.orig_colors = {}     # from palette_org.inc, for MODIFIED tags
             self.active = None        # panel that was last clicked (Ctrl+C/V target)
             self.clip = []            # colour clipboard (9-bit values)
             self.sortkeys = load_sort()
@@ -432,16 +434,25 @@ def run_gui():
             self.root.minsize(940, 560)
             top = ttk.Frame(self.root, padding=6); top.pack(side=tk.TOP, fill=tk.X)
             ttk.Button(top, text="Reload file", command=self._reload_file).pack(side=tk.LEFT)
-            # SOURCE selector: what the panels load/browse from. Saving always
-            # writes to palette.inc (the build input) regardless of source.
-            ttk.Label(top, text="  Source:").pack(side=tk.LEFT)
+            # SOURCE selectors: what each panel loads/browses from. Saving
+            # always writes to palette.inc (the build input) regardless.
+            ttk.Label(top, text="  Source A:").pack(side=tk.LEFT)
             self.src_var = tk.StringVar(value="palette.inc (working)")
-            src = ttk.Combobox(top, textvariable=self.src_var, width=24, state="readonly",
+            src = ttk.Combobox(top, textvariable=self.src_var, width=22, state="readonly",
                                values=["palette.inc (working)",
                                        "palette_org.inc (original)",
                                        "other file..."])
             src.pack(side=tk.LEFT, padx=(2, 8))
-            src.bind("<<ComboboxSelected>>", lambda e: self._pick_source())
+            src.bind("<<ComboboxSelected>>", lambda e: self._pick_source_a())
+            ttk.Label(top, text="B:").pack(side=tk.LEFT)
+            self.srcb_var = tk.StringVar(value="same as A")
+            srcb = ttk.Combobox(top, textvariable=self.srcb_var, width=22, state="readonly",
+                                values=["same as A",
+                                        "palette.inc (working)",
+                                        "palette_org.inc (original)",
+                                        "other file..."])
+            srcb.pack(side=tk.LEFT, padx=(2, 8))
+            srcb.bind("<<ComboboxSelected>>", lambda e: self._pick_source_b())
             self.use_vce = tk.BooleanVar(value=True)
             ttk.Checkbutton(top, text="VCE colours", variable=self.use_vce,
                             command=self._toggle_pal).pack(side=tk.LEFT, padx=12)
@@ -483,36 +494,65 @@ def run_gui():
                 if p.sel is not None:
                     p.stage()
 
-        def _pick_source(self):
-            sel = self.src_var.get()
+        def pal_for(self, panel):
+            if panel is self.right and self.pal_b is not None:
+                return self.pal_b
+            return self.pal_a
+
+        def _resolve_source(self, sel, title):
+            """Selector text -> path, or None if the file dialog was cancelled."""
             if sel.startswith("other"):
                 from tkinter import filedialog
-                p = filedialog.askopenfilename(initialdir=HERE, title="Source .inc",
-                                               filetypes=[("inc files", "*.inc"), ("all", "*.*")])
-                if not p:
-                    self.src_var.set(os.path.basename(getattr(self, "src_path", INC_FILE)))
-                    return
-                self.src_path = p
-            elif sel.startswith("palette_org"):
-                self.src_path = os.path.join(HERE, "palette_org.inc")
+                return filedialog.askopenfilename(
+                    initialdir=HERE, title=title,
+                    filetypes=[("inc files", "*.inc"), ("all", "*.*")]) or None
+            if sel.startswith("palette_org"):
+                return os.path.join(HERE, "palette_org.inc")
+            return INC_FILE
+
+        def _pick_source_a(self):
+            p = self._resolve_source(self.src_var.get(), "Source .inc for Palette A")
+            if p is None:
+                self.src_var.set(os.path.basename(getattr(self, "src_path_a", INC_FILE)))
+                return
+            self.src_path_a = p
+            self._reload_file()
+
+        def _pick_source_b(self):
+            sel = self.srcb_var.get()
+            if sel.startswith("same"):
+                self.src_path_b = None
             else:
-                self.src_path = INC_FILE
+                p = self._resolve_source(sel, "Source .inc for Palette B")
+                if p is None:
+                    cur = getattr(self, "src_path_b", None)
+                    self.srcb_var.set(os.path.basename(cur) if cur else "same as A")
+                    return
+                self.src_path_b = p
             self._reload_file()
 
         def _reload_file(self):
             try:
-                src = getattr(self, "src_path", INC_FILE)
-                self.pal = PaletteIncFile(src)
+                src_a = getattr(self, "src_path_a", INC_FILE)
+                src_b = getattr(self, "src_path_b", None)      # None = share A
+                self.pal_a = PaletteIncFile(src_a)
+                self.pal_b = PaletteIncFile(src_b) if src_b else None
                 org_path = os.path.join(HERE, "palette_org.inc")
+                self.orig_colors = {}
                 if os.path.exists(org_path):
                     org = PaletteIncFile(org_path)
-                    self.pal.orig_colors = {k: b["colors"] for k, b in org.blocks.items()}
-                note = "" if self.pal.orig_colors else " (palette_org.inc missing: no MODIFIED tags)"
-                self.info.config(text="Loaded %s (%d blocks)%s.  Saving writes palette.inc."
-                                 % (os.path.basename(src), len(self.pal.blocks), note))
+                    self.orig_colors = {k: b["colors"] for k, b in org.blocks.items()}
+                for pal in (self.pal_a, self.pal_b):
+                    if pal is not None:
+                        pal.orig_colors = self.orig_colors
+                note = "" if self.orig_colors else " (palette_org.inc missing: no MODIFIED tags)"
+                b_txt = "" if src_b is None else ", B: %s (%d)" % (
+                    os.path.basename(src_b), len(self.pal_b.blocks))
+                self.info.config(text="Loaded A: %s (%d blocks)%s%s.  Saving writes palette.inc."
+                                 % (os.path.basename(src_a), len(self.pal_a.blocks), b_txt, note))
                 for p in (self.left, self.right):
                     p.refresh_nav()
-                    if p.key and self.pal.get(*p.key):
+                    if p.key and p.pal().get(*p.key):
                         p.load(*p.key)
                     elif p._nav_keys:
                         p.load(*p._nav_keys[0])
@@ -610,7 +650,8 @@ def run_gui():
                              % (n, "" if n == 1 else "s", which))
 
         def browse(self, target):
-            if not self.pal:
+            pal = target.pal()
+            if not pal:
                 return
             win = tk.Toplevel(self.root); win.title("Load into %s" % target.title)
             win.geometry("820x520"); win.transient(self.root); win.grab_set()
@@ -626,14 +667,14 @@ def run_gui():
             vsb = ttk.Scrollbar(body, orient=tk.VERTICAL, command=tv.yview)
             tv.configure(yscrollcommand=vsb.set)
             vsb.pack(side=tk.RIGHT, fill=tk.Y); tv.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            for (bank, org), b in self.pal.blocks.items():
+            for (bank, org), b in pal.blocks.items():
                 tv.insert("", tk.END, iid="%02X_%04X" % (bank, org), values=(
                     "$%02X:$%04X" % (bank, org), b.get("section", "?"), b.get("subpal", ""),
                     b.get("colours", 0), (b.get("fade", "") or "").replace("prefade", "fade"), b.get("used", "?"),
                     "yes" if b.get("edited") else ""))
 
             def resort():
-                for i, k in enumerate(order_keys(self.pal.blocks, self.sortkeys)):
+                for i, k in enumerate(order_keys(pal.blocks, self.sortkeys)):
                     tv.move("%02X_%04X" % k, "", i)
                 rank = {c: (n + 1, r) for n, (c, r) in enumerate(self.sortkeys)}
                 for c in cols:
@@ -677,35 +718,41 @@ def run_gui():
             ttk.Button(bar, text="Open selected", command=pick).pack(side=tk.RIGHT, padx=6, pady=6)
 
         def save(self):
-            if not self.pal:
+            if not self.pal_a:
                 return
             if not (self.left.key or self.right.key):
                 messagebox.showwarning("Save", "Load a block first."); return
             # destination is ALWAYS palette.inc (the build input), regardless
-            # of which source file the panels are showing
-            src = getattr(self, "src_path", INC_FILE)
-            if src == INC_FILE:
-                dest = self.pal
-            else:
-                dest = PaletteIncFile(INC_FILE)
-                dest.orig_colors = dict(self.pal.orig_colors)
-            skipped = []
+            # of which source files the panels are showing. Only panels whose
+            # colours were actually changed are written - so a panel kept on
+            # palette_org.inc purely as a reference can't silently revert its
+            # block in palette.inc.
+            dest = self.pal_a if self.pal_a.path == INC_FILE else PaletteIncFile(INC_FILE)
+            dest.orig_colors = self.orig_colors
+            written, skipped, untouched = [], [], []
             for p in (self.left, self.right):
-                if p.key:
-                    if dest.get(*p.key):
-                        dest.set_colors(p.key[0], p.key[1], p.colors)
-                    else:
-                        skipped.append("$%02X:$%04X" % p.key)
+                if not p.key:
+                    continue
+                if p.colors == p.orig and p.pal().path != INC_FILE:
+                    untouched.append("$%02X:$%04X" % p.key)
+                elif dest.get(*p.key):
+                    dest.set_colors(p.key[0], p.key[1], p.colors)
+                    written.append("$%02X:$%04X" % p.key)
+                else:
+                    skipped.append("$%02X:$%04X" % p.key)
             dest.save()
             self.left.orig = list(self.left.colors); self.right.orig = list(self.right.colors)
             self.left.refresh_nav(); self.right.refresh_nav()
-            msg = "Wrote palette.inc. Re-run the build to apply."
+            msg = "Wrote palette.inc (%s). Re-run the build to apply." \
+                  % (", ".join(written) if written else "no blocks changed")
+            if untouched:
+                msg += "\n(Unedited reference panel, left alone: %s)" % ", ".join(untouched)
             if skipped:
                 msg += "\n(Not in palette.inc, skipped: %s)" % ", ".join(skipped)
             messagebox.showinfo("Saved", msg)
 
     root = tk.Tk()
-    App(root)
+    run_gui.app = App(root)       # exposed for scripted testing
     root.mainloop()
 
 
