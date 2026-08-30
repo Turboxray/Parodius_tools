@@ -3,7 +3,7 @@ rem Extract assets from the ROM, build
 rem the 2.5 MB SF2-mapper expansion, blank the dead original gfx region.
 set PATH=%PATH%;c:\huc\bin
 
-python pce_gfx.py extract Parodius_Da__original.pce
+python pce_sf2_mapper_prep.py extract Parodius_Da__original.pce
 if errorlevel 1 exit /b 1
 
 (echo ; full 224 default)> variant.inc
@@ -13,5 +13,5 @@ if not exist Parodius_SF2.pce (
   echo FAILED - see build_Parodius_SF2.log
   exit /b 1
 )
-python pce_gfx.py zero
+python pce_sf2_mapper_prep.py zero
 echo built Parodius_SF2.pce

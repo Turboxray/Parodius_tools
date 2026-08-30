@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """SF2-build graphics tool for Parodius Da! (J).
 
-  pce_gfx.py extract <rom> [manifest]   decompress every stream listed in
+  pce_sf2_mapper_prep.py extract <rom> [manifest]   decompress every stream listed in
       stream_manifest.txt from the ROM into gfx_bins/ and generate
       Parodius_SF2_assets.inc (expansion asset banks + lookup tables)
-  pce_gfx.py zero [pce]                 blank the dead original graphics
+  pce_sf2_mapper_prep.py zero [pce]                 blank the dead original graphics
       region ($080000-$0FFFFF) in the assembled image (default
       Parodius_SF2.pce)
 

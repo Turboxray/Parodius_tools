@@ -31,14 +31,14 @@ build pipeline, run by `build_sf2.bat`:
    playthroughs of all four characters, every state (shield damage
    levels, death frames, pose extremes...), plus the game's own sequence
    tables for content no playthrough triggers.
-2. `pce_gfx.py extract` (a bit-exact reimplementation of the game's
+2. `pce_sf2_mapper_prep.py extract` (a bit-exact reimplementation of the game's
    decompressor, verified against live VRAM captures) extracts them all
    from **your** ROM into `gfx_bins/` and generates the expansion asset
    banks + lookup tables.
 3. `Parodius_SF2.asm` assembles the 2.5MB image: base hack + assets + a
    hook that diverts the game's decompress events (`[bank][src][p1]`
    match) to fast copies from the expansion.
-4. `pce_gfx.py zero` blanks the now-dead original graphics region.
+4. `pce_sf2_mapper_prep.py zero` blanks the now-dead original graphics region.
 
 ## Credits
 
