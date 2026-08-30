@@ -25,14 +25,16 @@ repo root; everything is built or extracted from it.
 The game stores its graphics as compressed streams (62% of the ROM). The
 build pipeline, run by `build_sf2.bat`:
 
-1. `census_to_streams.py` + the tracked capture logs
-   (`parodius_gfxtrace.txt`, `parodius_census.txt`) enumerate every stream
-   the game ever loads — including per-character, per-state, and flipped
-   variants (captured across full playthroughs of all characters).
-2. `pce_gfx_export.py` (with `pce_gfx_rip.py` / `pce_gfx_decode.py` — a
-   bit-exact reimplementation of the game's decompressor) extracts them
-   all from **your** ROM into `gfx_bins/` and generates the expansion
-   asset banks + lookup tables.
+1. `stream_manifest.txt` is the definitive map of every compressed stream
+   in the game — 603 variants (bank, src, flip, offsets, sizes,
+   destination), assembled from full-coverage reverse engineering: full
+   playthroughs of all four characters, every state (shield damage
+   levels, death frames, pose extremes...), plus the game's own sequence
+   tables for content no playthrough triggers.
+2. `pce_gfx_export.py` (with `pce_gfx_decode.py` — a bit-exact
+   reimplementation of the game's decompressor, verified against live
+   VRAM captures) extracts them all from **your** ROM into `gfx_bins/`
+   and generates the expansion asset banks + lookup tables.
 3. `Parodius_SF2.asm` assembles the 2.5MB image: base hack + assets + a
    hook that diverts the game's decompress events (`[bank][src][p1]`
    match) to fast copies from the expansion.
