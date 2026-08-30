@@ -3,8 +3,7 @@ rem Regenerate the asset include from the trace corpus, then build the
 rem 2.5 MB SF2-mapper expansion ROM.
 set PATH=%PATH%;c:\huc\bin
 
-python census_to_streams.py
-python pce_gfx_export.py Parodius_Da__original.pce parodius_gfxtrace.txt parodius_extra_streams.txt
+python pce_gfx_export.py Parodius_Da__original.pce
 if errorlevel 1 exit /b 1
 
 (echo ; full 224 default)> variant.inc

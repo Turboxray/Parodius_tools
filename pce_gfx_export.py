@@ -1,115 +1,76 @@
 #!/usr/bin/env python3
-"""Export decompressed graphics as SF2-expansion build material.
+"""Extract the game's compressed graphics as SF2-expansion build material.
 
-From gfxtrace captures + the ROM, writes:
-  gfx_bins/<bank>_<src>.bin      decompressed VRAM data (p1=0) per stream
-  Parodius_SF2_assets.inc        auto-generated: expansion banks ($81+) with
-                                 .incbin'd assets (first-fit, no bank crossing)
-                                 + GnG-style lookup tables in bank $80:
-                                 match keys (event bank + src), asset location
-                                 (SF2 page/bank/addr), byte length, VRAM dst.
+Reads stream_manifest.txt (the definitive list of every compressed stream:
+bank, src, flip variant, sizes, destination) and the user-supplied ROM, then
+writes:
+  gfx_bins/<bank>_<src>[_fN].bin   decompressed VRAM data per stream variant
+  Parodius_SF2_assets.inc          expansion banks ($81+) with .incbin'd
+                                   assets (first-fit, no bank crossing) +
+                                   lookup tables in bank $80
 
-The future load-hook walks the match table with the ROMDEC event's [bank][src]
-as the ID; on a hit it streams the stored data instead of decompressing.
-NOTE: only p1=$00 events may be diverted - flipped variants ($01-$03) must
-fall through to the original decompressor (they mirror at decompress time).
+The load hook matches a decompress event's [bank][src][p1] against the
+tables; on a hit it streams the stored data instead of decompressing.
 
-Usage:  pce_gfx_export.py <rom> <trace.txt> [more traces...]
+Usage:  pce_gfx_export.py <rom> [manifest]
 """
 import os
 import sys
 import importlib.util
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-spec = importlib.util.spec_from_file_location("rip", os.path.join(HERE, "pce_gfx_rip.py"))
-rip = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(rip)
-dec = rip.dec
+spec = importlib.util.spec_from_file_location("dec", os.path.join(HERE, "pce_gfx_decode.py"))
+dec = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(dec)
 
 FIRST_BANK = 0x80          # LUT bank; assets from $81
 BANK_SIZE = 0x2000
 
 
-def walk_table(rom, blocks):
-    """Merge in every ROMDEC event reachable from the $C5BA sequence table
-    (bank $01) - covers content no playthrough triggered (second loop,
-    other characters' routes, unused). Trace entries take precedence."""
-    def b1(a):
-        return rom[0x2000 + (a - 0xC000)]
-
-    def w1(a):
-        return b1(a) | (b1(a + 1) << 8)
-
-    added = 0
-    i = 0
-    while True:
-        p = w1(0xC5BA + i * 2)
-        if not (0xC600 <= p < 0xE000):
-            break
-        j = p + 2
-        while True:
-            ep = w1(j)
-            j += 2
-            if ep == 0xFFFF:
-                break
-            k = ep
-            for _ in range(32):
-                t = b1(k)
-                if t == 0xFF:
-                    break
-                if t == 0xFE:
-                    k += 7
-                    continue
-                key = (t, w1(k + 4))
-                if key not in blocks:
-                    blocks[key] = {"calls": 0, "stages": set(), "dsts": set(),
-                                   "p1s": set(), "slots": set()}
-                    added += 1
-                blocks[key]["dsts"].add(w1(k + 2))
-                blocks[key]["p1s"].add(b1(k + 1))
-                k += 6
-        i += 1
-    print("static table walk: +%d streams not in the traces" % added)
-    return blocks
+def read_manifest(path):
+    entries = []
+    for ln in open(path):
+        ln = ln.strip()
+        if not ln or ln.startswith(";"):
+            continue
+        f = ln.split()
+        entries.append({"bank": int(f[0], 16), "src": int(f[1], 16),
+                        "p1": int(f[2], 16), "dst": int(f[6], 16)})
+    return entries
 
 
 def main():
-    if len(sys.argv) < 3:
+    if len(sys.argv) < 2:
         print(__doc__)
         return
     rom = open(sys.argv[1], "rb").read()
-    blocks = walk_table(rom, rip.parse_traces(sys.argv[2:]))
+    manifest = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "stream_manifest.txt")
+    entries = read_manifest(manifest)
 
     bindir = os.path.join(HERE, "gfx_bins")
     os.makedirs(bindir, exist_ok=True)
 
     assets = []
-    for (bank, src) in sorted(blocks):
-        info = blocks[(bank, src)]
-        # one asset per (bank, src, p1) variant seen - flips are pre-applied
-        # offline so the hook can divert them too (nothing decompresses at
-        # runtime and the original compressed data becomes fully dead)
-        for p1 in sorted(set(info["p1s"]) | {0}):
-            hdr, dic, out, clen = dec.decode_block_full(rom, bank, src, p1)
-            name = "%02X_%04X" % (bank, src)
-            if p1:
-                name += "_f%d" % p1
-            with open(os.path.join(bindir, name + ".bin"), "wb") as f:
-                f.write(out)
-            assets.append({"bank": bank, "src": src, "p1": p1, "name": name,
-                           "len": len(out), "dst": min(info["dsts"]),
-                           "stages": info["stages"]})
+    for e in entries:
+        hdr, dic, out, clen = dec.decode_block_full(rom, e["bank"], e["src"], e["p1"])
+        name = "%02X_%04X" % (e["bank"], e["src"])
+        if e["p1"]:
+            name += "_f%d" % e["p1"]
+        with open(os.path.join(bindir, name + ".bin"), "wb") as f:
+            f.write(out)
+        assets.append({"bank": e["bank"], "src": e["src"], "p1": e["p1"],
+                       "name": name, "len": len(out), "dst": e["dst"]})
 
     # first-fit decreasing into expansion banks (no block crosses a bank)
     assets.sort(key=lambda a: -a["len"])
-    banks = []                       # list of (used, [assets])
+    banks = []
     for a in assets:
-        for b in banks:
+        for bi, b in enumerate(banks):
             if b[0] + a["len"] <= BANK_SIZE:
-                a["ebank"] = FIRST_BANK + 1 + banks.index(b)
+                a["ebank"] = FIRST_BANK + 1 + bi
                 a["eoff"] = b[0]
                 b[1].append(a)
-                banks[banks.index(b)] = (b[0] + a["len"], b[1])
+                banks[bi] = (b[0] + a["len"], b[1])
                 break
         else:
             a["ebank"] = FIRST_BANK + 1 + len(banks)
@@ -120,7 +81,6 @@ def main():
     def page_of(ebank):
         return (ebank - 0x40) // 0x40      # $80-$BF -> 1, $C0-$FF -> 2, ...
 
-    # bucket by event bank (the ID's first byte); per-bucket 8-byte records
     buckets = {}
     for a in assets:
         buckets.setdefault(a["bank"], []).append(a)
@@ -131,18 +91,15 @@ def main():
     with open(os.path.join(HERE, "Parodius_SF2_assets.inc"), "w", newline="\n") as f:
         w = f.write
         w(";==================================================================\n")
-        w("; AUTO-GENERATED by pce_gfx_export.py - do not edit by hand.\n")
-        w("; Uncompressed graphics assets + lookup tables for the SF2 build.\n")
-        w("; Match key = the ROMDEC event's [bank][src lo][src hi]; only p1=$00\n")
-        w("; events may be diverted (flips fall through to the decompressor).\n")
+        w("; AUTO-GENERATED by pce_gfx_export.py from stream_manifest.txt -\n")
+        w("; do not edit by hand.\n")
         w(";\n")
         w("; Layout: bucket directory keyed by event bank -> per-bucket record\n")
         w("; list: [count] then count x 8-byte records\n")
         w(";   +0 src.lo  +1 src.hi  +2 (p1<<4)|sf2page  +3 asset WINDOW bank\n")
         w(";   +4 addr.lo +5 addr.hi +6 len.lo           +7 len.hi\n")
         w("; Flip variants (p1 1-3) are separate pre-flipped assets - match\n")
-        w("; includes p1, so NOTHING falls through to the decompressor for\n")
-        w("; known streams and the original upper 512K is fully dead.\n")
+        w("; includes p1, so nothing decompresses at runtime for known content.\n")
         w(";==================================================================\n\n")
         w("; LUT bank is mapped at MPR3 ($6000) by the hook; assets at MPR4 ($8000).\n")
         w("  .bank $%02X, \"asset LUTs\"\n    .page 3\n    .org $6000\n\n" % FIRST_BANK)
@@ -160,9 +117,6 @@ def main():
         for bk in bks:
             w("\nsf2.bucket.%02X:\n    .db %d\n" % (bk, len(buckets[bk])))
             for a in buckets[bk]:
-                # bank byte = WINDOW bank ($40-$7F); page nibble selects the
-                # 512KB (works for page-3 file banks $100+ too); p1 in the
-                # high nibble of the page byte
                 w("    .db $%02X,$%02X, $%02X,$%02X, low(asset.%s),high(asset.%s), $%02X,$%02X"
                   % (a["src"] & 0xFF, a["src"] >> 8,
                      (a["p1"] << 4) | page_of(a["ebank"]),
@@ -176,9 +130,8 @@ def main():
                 cur = a["ebank"]
                 w("\n;------------------------------------------------------------------\n")
                 w("  .bank $%02X, \"assets %02X\"\n    .page 4\n    .org $8000\n\n" % (cur, cur))
-            w("asset.%s:                ; %d bytes -> dst $%04X.w (stages %s)\n"
-              % (a["name"], a["len"],
-                 a["dst"], ",".join("$%02X" % s for s in sorted(a["stages"]))))
+            w("asset.%s:                ; %d bytes -> dst $%04X.w\n"
+              % (a["name"], a["len"], a["dst"]))
             w("  .incbin \"gfx_bins/%s.bin\"\n" % a["name"])
 
     used = sum(b[0] for b in banks)
