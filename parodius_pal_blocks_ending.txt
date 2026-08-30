@@ -1,0 +1,19 @@
+# bank, entry_logical, entry_abs, CTA, block_logical, block_abs, count, colours, stage
+bank=$38 entry=$4D6D abs=$070D6D CTA=$0000 block=$BDF9 block_abs=$077DF9 count=$01 colours=16 stage=$00
+bank=$38 entry=$4D71 abs=$070D71 CTA=$0100 block=$BCF8 block_abs=$077CF8 count=$0B colours=96 stage=$00
+bank=$38 entry=$4D75 abs=$070D75 CTA=$0160 block=$BD65 block_abs=$077D65 count=$03 colours=32 stage=$00
+bank=$38 entry=$4DA9 abs=$070DA9 CTA=$01A0 block=$72E4 block_abs=$0732E4 count=$09 colours=80 stage=$00
+bank=$38 entry=$4DAD abs=$070DAD CTA=$0000 block=$BE8F block_abs=$077E8F count=$03 colours=32 stage=$00
+bank=$38 entry=$4DB1 abs=$070DB1 CTA=$0100 block=$BE1F block_abs=$077E1F count=$01 colours=16 stage=$00
+bank=$38 entry=$4DB5 abs=$070DB5 CTA=$0110 block=$BE58 block_abs=$077E58 count=$05 colours=48 stage=$00
+bank=$38 entry=$47DC abs=$0707DC CTA=$0100 block=$5411 block_abs=$071411 count=$03 colours=32 stage=$00
+bank=$38 entry=$47E0 abs=$0707E0 CTA=$0120 block=$5436 block_abs=$071436 count=$01 colours=16 stage=$00
+bank=$38 entry=$47E4 abs=$0707E4 CTA=$00E0 block=$4EE7 block_abs=$070EE7 count=$01 colours=16 stage=$00
+bank=$38 entry=$47E8 abs=$0707E8 CTA=$00D0 block=$4ED4 block_abs=$070ED4 count=$01 colours=16 stage=$00
+bank=$38 entry=$4D6D abs=$070D6D CTA=$0000 block=$BDF9 block_abs=$077DF9 count=$01 colours=16 stage=$00
+bank=$38 entry=$4D71 abs=$070D71 CTA=$0100 block=$BCF8 block_abs=$077CF8 count=$0B colours=96 stage=$00
+bank=$38 entry=$4D75 abs=$070D75 CTA=$0160 block=$BD65 block_abs=$077D65 count=$03 colours=32 stage=$00
+bank=$38 entry=$4DA9 abs=$070DA9 CTA=$01A0 block=$72E4 block_abs=$0732E4 count=$09 colours=80 stage=$00
+bank=$38 entry=$4DAD abs=$070DAD CTA=$0000 block=$BE8F block_abs=$077E8F count=$03 colours=32 stage=$00
+bank=$38 entry=$4DB1 abs=$070DB1 CTA=$0100 block=$BE1F block_abs=$077E1F count=$01 colours=16 stage=$00
+bank=$38 entry=$4DB5 abs=$070DB5 CTA=$0110 block=$BE58 block_abs=$077E58 count=$05 colours=48 stage=$00
