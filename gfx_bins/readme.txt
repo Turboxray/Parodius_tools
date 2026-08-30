@@ -1,0 +1,1 @@
+Generated decompressed graphics are extracted to this folder.
