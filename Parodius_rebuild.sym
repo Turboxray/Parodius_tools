@@ -5,9 +5,12 @@ Bank	Addr	Label
    -	0000	DEVELO				
    -	0000	_bank_base			
    -	0000	_call_bank			
+   -	0001	HUD_MID				
    -	0001	MAGICKIT			
-   -	0001	HUD_FULL			
+   -	0004	COMP_SHIFT			
    -	000f	HUD_BGY				
-   -	0020	SPLIT_X				
+   -	0010	SPLIT_X				
+   -	0020	COMP_OFF			
    -	0080	_nb_bank			
    -	2201	_bss_end			
+  00	ffba	hud.comp.shift			

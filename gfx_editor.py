@@ -33,7 +33,16 @@ BINDIR = os.path.join(HERE, "gfx_bins")
 
 FMT = {"tile": {"wpc": 16, "size": 8, "per_row": 16},
        "sprite": {"wpc": 64, "size": 16, "per_row": 8}}
-GREY = [(v * 17, v * 17, v * 17) for v in range(16)]
+# built-in greyscale palettes (slot 0..NBUILTIN-1, always present):
+# 4bpp ramp, its reverse, a 3bpp ramp (0-7 twice, for 8-colour content
+# viewed in 4bpp cells), and its reverse
+G16 = [(v * 17, v * 17, v * 17) for v in range(16)]
+G8 = [(int(v / 7.0 * 255),) * 3 for v in range(8)]
+BUILTINS = [("greyscale", G16),
+            ("greyscale reversed", G16[::-1]),
+            ("3bpp greys (0-7 x2)", G8 + G8),
+            ("3bpp greys reversed", G8[::-1] + G8[::-1])]
+NBUILTIN = len(BUILTINS)
 BIN_RE = re.compile(r"^([0-9A-Fa-f]{2})_([0-9A-Fa-f]{4})(?:_f(\d+))?\.bin$")
 
 
@@ -170,7 +179,8 @@ def run_gui(path=None):
             if slot >= len(self.palettes):
                 slot = 0
             p = self.palettes[slot]
-            return GREY if p["colors"] is None else [vce_rgb(c) for c in p["colors"]]
+            return BUILTINS[p.get("builtin", 0)][1] if p["colors"] is None \
+                else [vce_rgb(c) for c in p["colors"]]
 
         # ---------- UI ----------
         def _build(self):
@@ -239,8 +249,12 @@ def run_gui(path=None):
 
             self.root.bind("<Control-s>", lambda e: self.save())
             self.root.bind("<Control-z>", lambda e: self.undo())
-            self.palettes = [{"label": "greyscale", "colors": None}]
+            self.palettes = self._builtin_slots()
             self.refresh_palettes()
+
+        def _builtin_slots(self):
+            return [{"label": lbl, "colors": None, "builtin": i}
+                    for i, (lbl, _) in enumerate(BUILTINS)]
 
         # ---------- file ----------
         def open_dialog(self):
@@ -272,7 +286,7 @@ def run_gui(path=None):
             self.meta = self.table.get((int(m.group(1), 16), int(m.group(2), 16),
                                         int(m.group(3) or 0))) if m else None
             self.words = [data[i] | (data[i + 1] << 8) for i in range(0, len(data) - 1, 2)]
-            self.palettes = [{"label": "greyscale", "colors": None}]
+            self.palettes = self._builtin_slots()
             self.active_pal = 0
             self.palmap = {"tile": {}, "sprite": {}}
             side = self.sidecar_path()
@@ -282,9 +296,17 @@ def run_gui(path=None):
                     self.fmt = sc.get("format", "tile") if sc.get("format") in FMT else "tile"
                     for pl in sc.get("palettes", []):
                         self.palettes.append({"label": pl["label"], "colors": pl["colors"]})
+                    # older sidecars had fewer builtin slots: shift imports
+                    shift = NBUILTIN - sc.get("nbuiltin", 1)
                     for k in ("tile", "sprite"):
-                        self.palmap[k] = {str(c): int(s) for c, s in sc.get("map", {}).get(k, {}).items()
-                                          if 0 <= int(s) <= len(self.palettes)}
+                        m = {}
+                        for c, s in sc.get("map", {}).get(k, {}).items():
+                            s = int(s)
+                            if s >= NBUILTIN - shift:
+                                s += shift
+                            if 0 <= s < len(self.palettes):
+                                m[str(c)] = s
+                        self.palmap[k] = m
                 except Exception as ex:
                     messagebox.showwarning("Sidecar", "Couldn't read %s:\n%s"
                                            % (os.path.basename(side), ex))
@@ -506,7 +528,7 @@ def run_gui(path=None):
 
         def render_strip(self):
             self.strip.delete("all")
-            rgb = self.cell_rgb(self.sel) if self.sel is not None else GREY
+            rgb = self.cell_rgb(self.sel) if self.sel is not None else BUILTINS[0][1]
             for i, c in enumerate(rgb):
                 x = i * 12
                 self.strip.create_rectangle(x, 0, x + 12, 14, fill="#%02x%02x%02x" % c,
@@ -608,7 +630,8 @@ def run_gui(path=None):
                                 command=self.set_active_pal).pack(side=tk.LEFT)
                 cv = tk.Canvas(row, width=16 * 8, height=12, highlightthickness=0)
                 cv.pack(side=tk.LEFT, padx=2)
-                rgb = GREY if p["colors"] is None else [vce_rgb(c) for c in p["colors"]]
+                rgb = BUILTINS[p.get("builtin", 0)][1] if p["colors"] is None \
+                    else [vce_rgb(c) for c in p["colors"]]
                 for k, c in enumerate(rgb):
                     cv.create_rectangle(k * 8, 0, k * 8 + 8, 12,
                                         fill="#%02x%02x%02x" % c, outline="")
@@ -619,8 +642,8 @@ def run_gui(path=None):
 
         def remove_palette(self):
             i = self.pal_var.get()
-            if i == 0:
-                return                      # greyscale is permanent
+            if i < NBUILTIN:
+                return                      # builtin greys are permanent
             del self.palettes[i]
             for m in self.palmap.values():  # remap cells: gone -> grey, shift the rest
                 for k in list(m):
@@ -718,9 +741,9 @@ def run_gui(path=None):
                 out += bytes((w & 0xFF, w >> 8))
             out = out[:self.nbytes] + bytes(self.nbytes - min(len(out), self.nbytes))
             open(self.path, "wb").write(out)
-            sc = {"format": self.fmt,
+            sc = {"format": self.fmt, "nbuiltin": NBUILTIN,
                   "palettes": [{"label": p["label"], "colors": p["colors"]}
-                               for p in self.palettes[1:]],
+                               for p in self.palettes[NBUILTIN:]],
                   "map": self.palmap}
             with open(self.sidecar_path(), "w") as f:
                 json.dump(sc, f, indent=1)
