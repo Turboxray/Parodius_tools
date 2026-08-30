@@ -248,14 +248,21 @@ def run_gui(path=None, classify=False):
             self.fmt_var = tk.StringVar(value="unknown" if self.classify_mode else "tile")
             fmts = [("Tiles 8x8", "tile"), ("Sprites 16x16", "sprite")]
             if self.classify_mode:
+                # classify controls get their own row - the top bar is full
+                row2 = ttk.Frame(self.root, padding=(6, 0, 6, 4))
+                row2.pack(side=tk.TOP, fill=tk.X)
+                ttk.Label(row2, text="Classify:").pack(side=tk.LEFT)
                 fmts.append(("Unknown", "unknown"))
+                fmt_parent = row2
+            else:
+                fmt_parent = top
             for txt, v in fmts:
-                ttk.Radiobutton(top, text=txt, variable=self.fmt_var, value=v,
+                ttk.Radiobutton(fmt_parent, text=txt, variable=self.fmt_var, value=v,
                                 command=self.set_fmt).pack(side=tk.LEFT, padx=6)
             if self.classify_mode:
-                ttk.Button(top, text="Next unclassified", command=self.next_unclassified
-                           ).pack(side=tk.LEFT, padx=6)
-                self.prog_lbl = ttk.Label(top, text="")
+                ttk.Button(row2, text="Next unclassified", command=self.next_unclassified
+                           ).pack(side=tk.LEFT, padx=12)
+                self.prog_lbl = ttk.Label(row2, text="")
                 self.prog_lbl.pack(side=tk.LEFT, padx=6)
             ttk.Label(top, text="Zoom:").pack(side=tk.LEFT, padx=(10, 2))
             self.zoom_var = tk.StringVar(value="3")
