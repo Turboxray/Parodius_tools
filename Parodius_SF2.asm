@@ -1,9 +1,10 @@
 ;==================================================================
 ;  Parodius Da! -- SF2-mapper expansion build (2.5 MB / 20 Mbit)
 ;------------------------------------------------------------------
-;  Base : the full hack (Parodius_patch.asm: colours + 224 window)
-;  Adds : uncompressed graphics assets in expansion banks $80+,
-;         exported by pce_gfx_export.py from gfxtrace captures.
+;  Base : the full hack (Parodius_rebuild.asm: colours + 224 window)
+;  Adds : every graphics stream stored uncompressed in expansion banks
+;         $80+ (pce_sf2_mapper_prep.py extract, from stream_manifest.txt)
+;         + a load hook that serves them instead of decompressing.
 ;
 ;  Build:  build_sf2.bat  ->  pceas Parodius_SF2.asm --sf2 -raw
 ;  Out  :  Parodius_SF2.pce  (2.5 MB StreetFighterII-mapper HuCard)
@@ -13,15 +14,15 @@
 ;  always-mapped MPR7 = bank $00).  pceas file banks $80-$BF appear
 ;  in the window as MPR banks $40-$7F while page 1 is latched, etc.
 ;
-;  Status: DATA ONLY so far - the load hook (divert ROMDEC events to
-;  these assets by [bank][src] ID match, p1=$00 only) comes next.
-;  See anim-engine.md / gfx-compression.md.
+;  Result: the game's chronic dropped frames are gone (stock loses 1
+;  frame in 9 re-decompressing the water; this build measures 0 lag /
+;  eff 60.0 in gameplay).
 ;==================================================================
 
 ; SF2 page latch (write-only; value ignored, address selects page)
 sf2.latch = $FFF0            ; +0..+3 = page 0..3
 
-  .include "Parodius_patch.asm"
+  .include "Parodius_rebuild.asm"
 
 ;==================================================================
 ; Load hook: divert ROMDEC events to the stored uncompressed assets
@@ -43,11 +44,10 @@ sf2.latch = $FFF0            ; +0..+3 = page 0..3
 ; mapped); the main hook in fixed bank $23's free space (always
 ; reachable - the SF2 window only covers banks $40-$7F).  While
 ; diverting: MPR2 = bank $23 (code), MPR3 = LUT bank $80 (page 1),
-; MPR4 = asset bank.  Interrupts are masked over the page-1 window
-; so nothing observes non-page-0 banks; page 0 is restored on every
-; exit path.  ZP $00-$05 scratch = the decompressor's own scratch
-; (only touched when the decompressor won't run, or before it
-; initialises them).
+; MPR4 = asset bank.  No interrupt masking is needed (see the note at
+; sf2.hook.main); page 0 is restored on every exit path.  ZP $00-$07
+; scratch = the decompressor's own scratch (only touched when the
+; decompressor won't run, or before it initialises them).
 ;==================================================================
 
 ;------------------------------------------------------------------
