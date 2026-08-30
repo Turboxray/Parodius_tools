@@ -17,7 +17,7 @@ import sys
 import importlib.util
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-spec = importlib.util.spec_from_file_location("pie", os.path.join(HERE, "palette_inc_editor.py"))
+spec = importlib.util.spec_from_file_location("pie", os.path.join(HERE, "palette_editor.py"))
 pie = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pie)
 

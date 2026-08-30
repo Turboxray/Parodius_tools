@@ -47,7 +47,7 @@ SF2 side of `build_all.bat`:
 
 ## Palette editor
 
-`palette_inc_editor.py` (Tkinter, needs
+`palette_editor.py` (Tkinter, needs
 [Pillow](https://pypi.org/project/pillow/) for the VCE-colour view) is the
 tool the colour hack was made with: two side-by-side palette panels, browse
 any of the game's colour blocks by bank:addr (sortable by level/usage),
