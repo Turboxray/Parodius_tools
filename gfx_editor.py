@@ -681,7 +681,7 @@ def run_gui(path=None):
                               values=["palette.inc", "palette_org.inc", "other file..."])
             cb.pack(side=tk.LEFT, padx=4)
             body = ttk.Frame(win); body.pack(fill=tk.BOTH, expand=True)
-            lb = tk.Listbox(body, width=66, height=22, selectmode=tk.EXTENDED,
+            lb = tk.Listbox(body, width=84, height=22, selectmode=tk.EXTENDED,
                             font=("Consolas", 9))
             vsb = ttk.Scrollbar(body, orient=tk.VERTICAL, command=lb.yview)
             lb.configure(yscrollcommand=vsb.set)
@@ -696,17 +696,20 @@ def run_gui(path=None):
                     pal = pie.PaletteIncFile(path)
                 except Exception as ex:
                     messagebox.showerror("Load", str(ex), parent=win); return
-                base = os.path.basename(path)
+                win.title("Add palette from %s" % os.path.basename(path))
                 for (bank, org), b in pal.blocks.items():
                     cols = b["colors"]
                     sec = "SPR" if b.get("section") == "sprite" else \
                           ("BG" if b.get("section") == "BG" else "?")
                     used = pie.compact_used(b.get("used", "?"))
-                    for s in range(math.ceil(len(cols) / 16.0)):
+                    fade = (b.get("fade", "") or "").replace("prefade", "fade")
+                    nsl = math.ceil(len(cols) / 16.0)
+                    for s in range(int(nsl)):
                         sl = cols[s * 16:(s + 1) * 16]
-                        sl = sl + [0] * (16 - len(sl))
-                        label = "$%02X:$%04X s%d  %-3s %-14s %s" % (
-                            bank, org, s, sec, used, base)
+                        n = len(sl)
+                        sl = sl + [0] * (16 - n)
+                        label = "$%02X:$%04X s%d/%d [%3d/%2d]  %-3s %-14s %s" % (
+                            bank, org, s, nsl, len(cols), n, sec, used, fade)
                         slices.append((label, sl))
                         lb.insert(tk.END, label)
 
