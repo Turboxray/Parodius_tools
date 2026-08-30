@@ -25,7 +25,7 @@ repo root; everything is built or extracted from it.
 The game stores its graphics as compressed streams (62% of the ROM). The
 build pipeline, run by `build_sf2.bat`:
 
-1. `stream_manifest.txt` is the definitive map of every compressed stream
+1. `compressed_gfx_table.txt` is the definitive map of every compressed stream
    in the game — 603 variants (bank, src, flip, offsets, sizes,
    destination), assembled from full-coverage reverse engineering: full
    playthroughs of all four characters, every state (shield damage
