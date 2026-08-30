@@ -20,10 +20,14 @@
 ;==================================================================
 ; HUD / window variant select
 ;------------------------------------------------------------------
-; Assemble this file directly           -> FULL 224-line window (default)
-; Assemble Parodius_patch_stockHUD.asm  -> colour hack only, HUD untouched
-; Assemble Parodius_patch_hud208.asm    -> split at line 208
-; Assemble Parodius_patch_hud216.asm    -> split at line 216
+; ONE source file for all variants: the build scripts write the variant
+; equates into variant.inc before invoking pceas (this pceas has no
+; command-line define option). An empty variant.inc = FULL 224 default.
+;   stock_height: HUD_STOCK = 1
+;   208h:         HUD_MID = 1, SPLIT_X = $10, COMP_OFF = $20, COMP_SHIFT = 4
+;   216h:         HUD_MID = 1, SPLIT_X = $18, COMP_OFF = $20, COMP_SHIFT = 5
+;
+  .include "variant.inc"
 ;
 ; HUD_STOCK skips every window overlay.  A wrapper sets SPLIT_X to pick
 ; the split line: split line = $100 + SPLIT_X.

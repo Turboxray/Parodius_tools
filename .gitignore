@@ -5,6 +5,7 @@ Parodius_patch*.sym
 Parodius_patch*.ips
 Parodius_patch*.xdelta
 Parodius_patch*.zip
+Parodius_Da__original.pce
 build_*.log
 log.txt
 *_debug.txt
@@ -29,3 +30,4 @@ Parodius_SF2*.lst
 gfx_bins/
 Parodius_SF2_assets.inc
 parodius_extra_streams.txt
+variant.inc
