@@ -59,6 +59,11 @@ other .inc. **Saving always writes `palette.inc`**, the file the build
 consumes; a panel kept on another source purely as a reference (no edits)
 is left out of the save so it can't revert your work.
 
+An **A/B diff** window compares the two panels slot by slot — split
+swatches (left half A, right half B), switchable between showing only the
+differences or only the matches (non-applying slots are X'd out), live as
+you edit; clicking a swatch selects that slot in both panels.
+
 `palette_org.inc` is ripped from **your** ROM by `rip_palettes.py`
 (run automatically by `build_all.bat`), using `palette.inc` as the
 structural map — so the true original colours are always available for

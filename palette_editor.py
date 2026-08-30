@@ -356,6 +356,7 @@ def run_gui():
                 self.canvas.create_rectangle(x, y, x + BOX, y + BOX, fill=fill, outline=outline, width=w)
             rows = (len(self.colors) + 15) // 16
             self.canvas.configure(scrollregion=(0, 0, 16 * (BOX + 2) + 8, max(rows, 1) * (BOX + 2) + 8))
+            self.app.refresh_diff()
 
         def _index_at(self, ev):
             col = (int(self.canvas.canvasx(ev.x)) - 4) // (BOX + 2)
@@ -368,6 +369,11 @@ def run_gui():
             if i is None:
                 return
             self.app.active = self     # last-clicked panel = Ctrl+C/V target
+            self.select_index(i, ctrl)
+
+        def select_index(self, i, ctrl=False):
+            if not (0 <= i < len(self.colors)):
+                return
             if ctrl:
                 self.selset.discard(i) if i in self.selset else self.selset.add(i)
             else:
@@ -456,6 +462,7 @@ def run_gui():
             self.use_vce = tk.BooleanVar(value=True)
             ttk.Checkbutton(top, text="VCE colours", variable=self.use_vce,
                             command=self._toggle_pal).pack(side=tk.LEFT, padx=12)
+            ttk.Button(top, text="A/B diff", command=self.show_diff).pack(side=tk.LEFT)
             ttk.Button(top, text="Save to palette.inc", command=self.save).pack(side=tk.RIGHT)
             self.info = ttk.Label(self.root, text="", padding=(6, 0)); self.info.pack(side=tk.TOP, fill=tk.X)
 
@@ -648,6 +655,82 @@ def run_gui():
             which = "A" if p is self.left else "B"
             self.info.config(text="Pasted %d colour%s into Palette %s (not saved yet - hit Save to commit)."
                              % (n, "" if n == 1 else "s", which))
+
+        def show_diff(self):
+            """Third window: compares the blocks loaded in A and B, slot by
+            slot. Shows only the differing slots (or only the matching ones,
+            inverted) as split swatches - left half A, right half B. Slots
+            that don't apply to the current mode are X'd out."""
+            if getattr(self, "diff_win", None) and self.diff_win.winfo_exists():
+                self.diff_win.lift(); return
+            win = tk.Toplevel(self.root); win.title("A vs B")
+            self.diff_win = win
+            bar = ttk.Frame(win, padding=4); bar.pack(side=tk.TOP, fill=tk.X)
+            ttk.Label(bar, text="Show:").pack(side=tk.LEFT)
+            self.diff_mode = tk.StringVar(value="differ")
+            ttk.Radiobutton(bar, text="differences", variable=self.diff_mode,
+                            value="differ", command=self.refresh_diff).pack(side=tk.LEFT, padx=4)
+            ttk.Radiobutton(bar, text="matches", variable=self.diff_mode,
+                            value="match", command=self.refresh_diff).pack(side=tk.LEFT, padx=4)
+            self.diff_lbl = ttk.Label(bar, text=""); self.diff_lbl.pack(side=tk.RIGHT)
+            body = ttk.Frame(win); body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+            self.diff_canvas = tk.Canvas(body, bg="#181818",
+                                         width=16 * (BOX + 2) + 12, height=8 * (BOX + 2) + 8)
+            vsb = ttk.Scrollbar(body, orient=tk.VERTICAL, command=self.diff_canvas.yview)
+            self.diff_canvas.configure(yscrollcommand=vsb.set)
+            vsb.pack(side=tk.RIGHT, fill=tk.Y)
+            self.diff_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            self.diff_canvas.bind("<Button-1>", self._diff_click)
+            ttk.Label(win, text="left half = A, right half = B.  X = slot doesn't apply.  "
+                                "Click a swatch to select that slot in both panels.",
+                      padding=(6, 2)).pack(side=tk.BOTTOM, fill=tk.X)
+            self.refresh_diff()
+
+        def refresh_diff(self):
+            win = getattr(self, "diff_win", None)
+            if not win or not win.winfo_exists():
+                return
+            cv = self.diff_canvas; cv.delete("all")
+            if not (self.left.key and self.right.key):
+                self.diff_lbl.config(text="load a block in both panels"); return
+            A, B = self.left.colors, self.right.colors
+            n = max(len(A), len(B))
+            pm = self._palmap()
+            want_diff = self.diff_mode.get() == "differ"
+            hits = 0
+            for i in range(n):
+                row, col = divmod(i, 16)
+                x, y = 4 + col * (BOX + 2), 4 + row * (BOX + 2)
+                a = A[i] if i < len(A) else None
+                b = B[i] if i < len(B) else None
+                if (a != b) == want_diff:
+                    hits += 1
+                    fa = "#%02x%02x%02x" % pm.get(a, (0, 0, 0)) if a is not None else "#181818"
+                    fb = "#%02x%02x%02x" % pm.get(b, (0, 0, 0)) if b is not None else "#181818"
+                    cv.create_rectangle(x, y, x + BOX // 2, y + BOX, fill=fa, outline="")
+                    cv.create_rectangle(x + BOX // 2, y, x + BOX, y + BOX, fill=fb, outline="")
+                    cv.create_rectangle(x, y, x + BOX, y + BOX, outline="#ccc", width=1)
+                else:
+                    cv.create_rectangle(x, y, x + BOX, y + BOX, fill="#242424", outline="#333")
+                    cv.create_line(x + 3, y + 3, x + BOX - 3, y + BOX - 3, fill="#555", width=2)
+                    cv.create_line(x + 3, y + BOX - 3, x + BOX - 3, y + 3, fill="#555", width=2)
+            rows = (n + 15) // 16
+            cv.configure(scrollregion=(0, 0, 16 * (BOX + 2) + 8, max(rows, 1) * (BOX + 2) + 8))
+            note = "" if len(A) == len(B) else "  (counts differ: %d vs %d)" % (len(A), len(B))
+            self.diff_lbl.config(text="%d of %d slots %s%s"
+                                 % (hits, n, "differ" if want_diff else "match", note))
+
+        def _diff_click(self, ev):
+            if not (self.left.key and self.right.key):
+                return
+            cv = self.diff_canvas
+            col = (int(cv.canvasx(ev.x)) - 4) // (BOX + 2)
+            row = (int(cv.canvasy(ev.y)) - 4) // (BOX + 2)
+            i = row * 16 + col
+            if not (0 <= col < 16 and 0 <= row):
+                return
+            for p in (self.left, self.right):
+                p.select_index(i)
 
         def browse(self, target):
             pal = target.pal()
