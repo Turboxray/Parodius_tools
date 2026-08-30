@@ -180,12 +180,10 @@ DECODE = {"tile": tile_decode, "sprite": sprite_decode}
 ENCODE = {"tile": tile_encode, "sprite": sprite_encode}
 
 
-def run_gui(path=None, classify=False):
+def run_gui(path=None):
     pie = _load_pie()
 
     class App:
-        classify_mode = classify
-
         def __init__(self, root):
             self.root = root
             self.path = None
@@ -245,25 +243,20 @@ def run_gui(path=None, classify=False):
             ttk.Button(top, text="Browse bins...", command=self.browse_bins).pack(side=tk.LEFT, padx=(6, 0))
             ttk.Button(top, text="<", width=2, command=lambda: self.step_file(-1)).pack(side=tk.LEFT, padx=(6, 0))
             ttk.Button(top, text=">", width=2, command=lambda: self.step_file(1)).pack(side=tk.LEFT)
-            self.fmt_var = tk.StringVar(value="unknown" if self.classify_mode else "tile")
-            fmts = [("Tiles 8x8", "tile"), ("Sprites 16x16", "sprite")]
-            if self.classify_mode:
-                # classify controls get their own row - the top bar is full
-                row2 = ttk.Frame(self.root, padding=(6, 0, 6, 4))
-                row2.pack(side=tk.TOP, fill=tk.X)
-                ttk.Label(row2, text="Classify:").pack(side=tk.LEFT)
-                fmts.append(("Unknown", "unknown"))
-                fmt_parent = row2
-            else:
-                fmt_parent = top
-            for txt, v in fmts:
-                ttk.Radiobutton(fmt_parent, text=txt, variable=self.fmt_var, value=v,
+            # format = the content classification (per bin, kept in the cfg);
+            # its own row - the top bar is full
+            self.fmt_var = tk.StringVar(value="unknown")
+            row2 = ttk.Frame(self.root, padding=(6, 0, 6, 4))
+            row2.pack(side=tk.TOP, fill=tk.X)
+            ttk.Label(row2, text="Format:").pack(side=tk.LEFT)
+            for txt, v in (("Tiles 8x8", "tile"), ("Sprites 16x16", "sprite"),
+                           ("Unknown", "unknown")):
+                ttk.Radiobutton(row2, text=txt, variable=self.fmt_var, value=v,
                                 command=self.set_fmt).pack(side=tk.LEFT, padx=6)
-            if self.classify_mode:
-                ttk.Button(row2, text="Next unclassified", command=self.next_unclassified
-                           ).pack(side=tk.LEFT, padx=12)
-                self.prog_lbl = ttk.Label(row2, text="")
-                self.prog_lbl.pack(side=tk.LEFT, padx=6)
+            ttk.Button(row2, text="Next unclassified", command=self.next_unclassified
+                       ).pack(side=tk.LEFT, padx=12)
+            self.prog_lbl = ttk.Label(row2, text="")
+            self.prog_lbl.pack(side=tk.LEFT, padx=6)
             ttk.Label(top, text="Zoom:").pack(side=tk.LEFT, padx=(10, 2))
             self.zoom_var = tk.StringVar(value="3")
             zb = ttk.Combobox(top, textvariable=self.zoom_var, width=2, state="readonly",
@@ -373,8 +366,7 @@ def run_gui(path=None, classify=False):
             self._sync_cur()
             st = self.bins.get(name)
             if st is None:
-                st = {"format": "unknown" if self.classify_mode else self.fmt,
-                      "map": {"tile": {}, "sprite": {}},
+                st = {"format": "unknown", "map": {"tile": {}, "sprite": {}},
                       "default": None, "palettes": []}
                 side = self.sidecar_path()
                 if os.path.exists(side):        # legacy per-bin sidecar
@@ -390,9 +382,8 @@ def run_gui(path=None, classify=False):
             self.palmap = st["map"]
             d = st.get("default")
             self.active_pal = d if (d is not None and 0 <= d < len(self.palettes)) else 0
-            self.fmt_var.set(st["format"] if self.classify_mode else self.fmt)
-            if self.classify_mode:
-                self.update_progress()
+            self.fmt_var.set(st["format"])
+            self.update_progress()
             self.sel = None
             self.undo_stack = []
             self.dirty = False
@@ -545,9 +536,8 @@ def run_gui(path=None, classify=False):
                 if st["format"] in FMT and st["format"] != self.fmt:
                     self.fmt = st["format"]
                     self.decode_all()
-                self.fmt_var.set(st["format"] if self.classify_mode else self.fmt)
-                if self.classify_mode:
-                    self.update_progress()
+                self.fmt_var.set(st["format"])
+                self.update_progress()
                 d = st.get("default")
                 if d is not None and 0 <= d < len(self.palettes):
                     self.active_pal = d
@@ -805,7 +795,7 @@ def run_gui(path=None, classify=False):
             if self.cur:
                 self.cur["format"] = sel
                 # a classification also settles the block's flip siblings
-                if self.classify_mode and sel in FMT and self.path:
+                if sel in FMT and self.path:
                     for fl, p in flip_family(self.path)[1]:
                         n = os.path.basename(p)
                         sib = self.bins.setdefault(
@@ -813,8 +803,7 @@ def run_gui(path=None, classify=False):
                                 "default": None, "palettes": []})
                         sib["format"] = sel
             self.fmt = sel if sel in FMT else "tile"
-            if self.classify_mode:
-                self.update_progress()
+            self.update_progress()
             if not keep_undo:
                 self.undo_stack = []       # pixel coords are format-specific
             self.sel = None
@@ -1080,7 +1069,4 @@ def run_gui(path=None, classify=False):
 
 
 if __name__ == "__main__":
-    argv = sys.argv[1:]
-    _classify = "--classify" in argv
-    argv = [a for a in argv if a != "--classify"]
-    run_gui(argv[0] if argv else None, classify=_classify)
+    run_gui(sys.argv[1] if len(sys.argv) > 1 else None)
