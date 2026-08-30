@@ -247,6 +247,7 @@ def run_gui(path=None):
             ttk.Button(bb, text="-> cell", width=7, command=self.pal_to_cell).pack(side=tk.LEFT, padx=2)
             ttk.Button(bb, text="-> all", width=6, command=self.pal_to_all).pack(side=tk.LEFT, padx=2)
             ttk.Button(bb, text="Remove", command=self.remove_palette).pack(side=tk.LEFT, padx=2)
+            ttk.Button(bb, text="Clear", command=self.clear_palettes).pack(side=tk.LEFT, padx=2)
 
             self.root.bind("<Control-s>", lambda e: self.save())
             self.root.bind("<Control-z>", lambda e: self.undo())
@@ -669,6 +670,27 @@ def run_gui(path=None):
             self.render_cell()
             self.mark_dirty()
 
+        def clear_palettes(self):
+            """Drop every imported palette (builtin greys stay), including
+            any cell mappings that pointed at them."""
+            if len(self.palettes) <= NBUILTIN:
+                return
+            if not messagebox.askyesno("Clear", "Remove all %d imported palettes "
+                                       "(and their cell mappings)?"
+                                       % (len(self.palettes) - NBUILTIN)):
+                return
+            del self.palettes[NBUILTIN:]
+            for m in self.palmap.values():
+                for k in list(m):
+                    if m[k] >= NBUILTIN:
+                        del m[k]
+            self.active_pal = 0
+            self.refresh_palettes()
+            if self.words:
+                self.render_sheet()
+            self.render_cell()
+            self.mark_dirty()
+
         def add_palette(self):
             if pie is None:
                 return
@@ -682,7 +704,7 @@ def run_gui(path=None):
             cb.pack(side=tk.LEFT, padx=4)
             body = ttk.Frame(win); body.pack(fill=tk.BOTH, expand=True)
             lb = tk.Listbox(body, width=84, height=22, selectmode=tk.EXTENDED,
-                            font=("Consolas", 9))
+                            font=("Consolas", 9), exportselection=0)
             vsb = ttk.Scrollbar(body, orient=tk.VERTICAL, command=lb.yview)
             lb.configure(yscrollcommand=vsb.set)
             vsb.pack(side=tk.RIGHT, fill=tk.Y); lb.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -710,7 +732,7 @@ def run_gui(path=None):
                         sl = sl + [0] * (16 - n)
                         label = "$%02X:$%04X s%d/%d [%3d/%2d]  %-3s %-14s %s" % (
                             bank, org, s, nsl, len(cols), n, sec, used, fade)
-                        slices.append((label, sl))
+                        slices.append((label, sl, (bank, org)))
                         lb.insert(tk.END, label)
 
             def pick_file():
@@ -737,17 +759,33 @@ def run_gui(path=None):
                                           fill="#%02x%02x%02x" % (r, g, b), outline="")
             lb.bind("<<ListboxSelect>>", preview)
 
-            def add(ev=None):
-                for s in lb.curselection():
-                    label, cols = slices[s]
+            def add_rows(rows):
+                added = False
+                for r in rows:
+                    label, cols, key = slices[r]
                     self.palettes.append({"label": label, "colors": cols})
-                if lb.curselection():
+                    added = True
+                if added:
                     self.active_pal = len(self.palettes) - 1
                     self.refresh_palettes()
+                    if self.words:
+                        self.render_sheet()
+                    self.render_cell()
                     self.mark_dirty()
                 win.destroy()
+
+            def add(ev=None):
+                add_rows(list(lb.curselection()))
+
+            def add_block():
+                # every slice of every block that has a selected row
+                keys = {slices[r][2] for r in lb.curselection()}
+                add_rows([i for i, s in enumerate(slices) if s[2] in keys])
             lb.bind("<Double-1>", add)
-            ttk.Button(win, text="Add selected", command=add).pack(pady=4)
+            bar2 = ttk.Frame(win); bar2.pack(pady=4)
+            ttk.Button(bar2, text="Add selected", command=add).pack(side=tk.LEFT, padx=4)
+            ttk.Button(bar2, text="Add whole block", command=add_block).pack(side=tk.LEFT, padx=4)
+            ttk.Label(bar2, text="(Ctrl/Shift+click selects several)").pack(side=tk.LEFT, padx=4)
             load(os.path.join(HERE, "palette.inc"))
 
         # ---------- save ----------
