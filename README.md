@@ -45,6 +45,17 @@ SF2 side of `build_all.bat`:
    match) to fast copies from the expansion.
 4. `pce_sf2_mapper_prep.py zero` blanks the now-dead original graphics region.
 
+## Palette editor
+
+`palette_inc_editor.py` (Tkinter, needs
+[Pillow](https://pypi.org/project/pillow/) for the VCE-colour view) is the
+tool the colour hack was made with: two side-by-side palette panels, browse
+any of the game's colour blocks by bank:addr (sortable by level/usage),
+edit colours with RGB sliders (3-bit VCE), copy colours between panels
+(positionally or with Ctrl+C/Ctrl+V), and save back into `palette.inc` —
+rebuild and your recolour is in the ROM. `palette_org.inc` holds the
+original colours so edited blocks are tagged with their change counts.
+
 ## Credits
 
 Reverse engineering, hacks and tools: **Turboxray**, 2026.
