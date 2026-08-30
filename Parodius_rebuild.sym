@@ -13,4 +13,4 @@ Bank	Addr	Label
    -	0020	COMP_OFF			
    -	0080	_nb_bank			
    -	2201	_bss_end			
-  00	ff9b	hud.comp.shift			
+  00	ffba	hud.comp.shift			

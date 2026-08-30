@@ -4,7 +4,7 @@
 ;  Base : Parodius_Da__original.pce   (clean 1 MB original HuCard)
 ;  Goal : extend the playfield to the full 224 lines; HUD sits below.
 ;
-;  Build:  go.bat   ->   pceas Parodius_patch.asm -raw -l 3 -S
+;  Build:  go.bat   ->   pceas Parodius_rebuild.asm -raw -l 3 -S
 ;  Out  :  Parodius_patch.pce   (1 MB HuCard image)
 ;
 ;  Method: incbin the CLEAN original, then switch .bank/.org to
@@ -142,7 +142,10 @@ HUD_BGY  = $0F      ; HUD-region BG Y offset ($0C stock)
     sec
     sbc #COMP_OFF
     jsr hud.comp.shift
-    .org $FF9B
+    .org $FFBA              ; TAIL of the resident free run ($FF9B-$FFBF):
+                            ; the SF2 build's hook springboard occupies
+                            ; $FF9B-$FFB2, so the helper lives at the end
+                            ; (6 bytes max: 5 lsr + rts fits $FFBA-$FFBF)
 hud.comp.shift:               ; COMP_SHIFT lsr's (2..5 supported)
   .if (COMP_SHIFT >= 5)
     lsr a
