@@ -183,3 +183,11 @@ will be derived from that rom.
 ## Credits
 
 Reverse engineering, hacks and tools: **Turboxray**, 2026.
+
+Claude was used in assisting with various data verification, lua scripts (not in
+this repo), and assistance with other scripts. Agentic assistance really
+helps speed things up - especially when my time is very limited. And it's a
+great second set of eyes too. And writing documentation (something I hate doing) -
+but the last two sections in this doc are mine. Just note, this is my project
+and not a result of prompt engineering. All the color editing was painstakingly
+done by hand.
