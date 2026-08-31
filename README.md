@@ -47,6 +47,10 @@ SF2 side of `build_all.bat`:
    match) to fast copies from the expansion.
 4. `pce_sf2_mapper_prep.py zero` blanks the now-dead original graphics region.
 
+5. The build scripts expect the source rom (original) to be named:
+   `Parodius_Da__original.pce`. The scripts will take either headerless or
+   headered rom.
+
 ## Palette editor
 
 `palette_editor.py` (Tkinter, needs
@@ -110,6 +114,11 @@ transform the game uses, so an edit to the plain bin lands mirrored in
 the flipped ones (or vice versa). Untick it to edit a variant
 independently — e.g. to make the "mirrored" copy deliberately different
 art.
+
+### PCEAS Assembler
+
+I've provided pceas.exe for convenience, but you should build your own
+executable from: https://github.com/pce-devel/huc
 
 ## Credits
 

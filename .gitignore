@@ -9,6 +9,7 @@ Parodius_Da__original.pce
 build_*.log
 log.txt
 *_debug.txt
+*.lst
 
 # OS / editor cruft
 Thumbs.db
