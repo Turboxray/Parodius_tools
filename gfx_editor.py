@@ -57,11 +57,12 @@ def load_table():
         f = ln.split()
         if not f or ln.startswith(";"):
             continue
-        stages = f[7] if len(f) > 7 and f[7] != "-" else ""
+        levels = f[7] if len(f) > 7 and f[7] != "-" else ""
         table[(int(f[0], 16), int(f[1], 16), int(f[2], 16))] = {
-            "dst": int(f[6], 16), "dlen": int(f[5], 16), "stages": stages,
+            "dst": int(f[6], 16), "dlen": int(f[5], 16), "levels": levels,
             "hdr": int(f[8], 16) if len(f) > 8 else None,
-            "content": f[9] if len(f) > 9 else "?"}
+            "content": f[9] if len(f) > 9 else "?",
+            "slots": f[10] if len(f) > 10 and f[10] != "-" else ""}
     return table
 
 
@@ -417,9 +418,10 @@ def run_gui(path=None):
             filt_var = tk.StringVar()
             ttk.Entry(bar, textvariable=filt_var, width=24).pack(side=tk.LEFT, padx=4)
             body = ttk.Frame(win); body.pack(fill=tk.BOTH, expand=True)
-            cols = ("file", "fmt", "words", "tiles", "dst", "flip", "stages", "area")
+            cols = ("file", "fmt", "words", "tiles", "dst", "flip", "levels",
+                    "slots", "area")
             widths = {"file": 130, "fmt": 36, "words": 55, "tiles": 55, "dst": 60,
-                      "flip": 36, "stages": 130, "area": 220}
+                      "flip": 36, "levels": 80, "slots": 90, "area": 200}
             tv = ttk.Treeview(body, columns=cols, show="headings")
             for c in cols:
                 tv.heading(c, text=c)
@@ -428,8 +430,10 @@ def run_gui(path=None):
             tv.configure(yscrollcommand=vsb.set)
             vsb.pack(side=tk.RIGHT, fill=tk.Y); tv.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-            def area_text(stages):
-                names = [areas[s] for s in stages.split(",") if s in areas]
+            def area_text(levels, slots):
+                names = [areas[s] for s in levels.split(",") if s in areas]
+                names += [areas["s" + s.lower()] for s in slots.split(",")
+                          if "s" + s.lower() in areas]
                 return "; ".join(names[:2]) + (" ..." if len(names) > 2 else "")
 
             def populate(*_):
@@ -441,11 +445,13 @@ def run_gui(path=None):
                         continue
                     key = (int(m.group(1), 16), int(m.group(2), 16), int(m.group(3) or 0))
                     t = self.table.get(key)
-                    stages = (t["stages"] if t else "") or ""
-                    aname = area_text(stages)
+                    levels = (t["levels"] if t else "") or ""
+                    slots = (t["slots"] if t else "") or ""
+                    aname = area_text(levels, slots)
                     if q:
-                        ids = stages.lower().split(",")
-                        if q not in ids and q not in aname.lower():
+                        ids = levels.lower().split(",")
+                        sids = ["s" + s for s in slots.lower().split(",")]
+                        if q not in ids and q not in sids and q not in aname.lower():
                             continue
                     words = os.path.getsize(os.path.join(BINDIR, fn)) // 2
                     tv.insert("", tk.END, iid=fn, values=(
@@ -453,7 +459,9 @@ def run_gui(path=None):
                         "%.1f" % (words / 16.0),
                         "$%04X" % t["dst"] if t else "?",
                         "f%d" % key[2] if key[2] else "",
-                        (stages or "static table only") if t else "not in table",
+                        "$" + levels.replace(",", ",$") if levels
+                        else ("-" if t else "no table"),
+                        "$" + slots.replace(",", ",$") if slots else "-",
                         aname))
             filt_var.trace_add("write", populate)
             populate()
@@ -607,10 +615,11 @@ def run_gui(path=None):
             n = self.ncells()
             tag = ""
             if self.meta:
-                tag = "  |  VRAM dst $%04X.w, loaded by stage%s %s" % (
-                    self.meta["dst"], "s" if "," in self.meta["stages"] else "",
-                    "$" + self.meta["stages"].replace(",", ",$") if self.meta["stages"]
-                    else "(static table only)")
+                lv = self.meta["levels"]
+                tag = "  |  VRAM dst $%04X.w, levels %s%s" % (
+                    self.meta["dst"],
+                    "$" + lv.replace(",", ",$") if lv else "(static only)",
+                    ", slots " + self.meta["slots"] if self.meta["slots"] else "")
             self.info.config(text="%s: %d bytes = %d words = %d %s cells%s"
                              % (os.path.basename(self.path or "?"), self.nbytes,
                                 len(self.words), n, self.fmt, tag))

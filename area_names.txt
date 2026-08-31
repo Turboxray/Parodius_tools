@@ -1,30 +1,36 @@
-; Parodius Da! - semantic names for the stage/sequence ids ($2093 values =
-; $C5BA sequence-table slots). These ids appear in compressed_gfx_table.txt's
-; stages column; this file gives them human names for sorting/filtering
-; assets by area. Curated - extend as ids get identified.
+; Parodius Da! - names for the two asset-tag id spaces in
+; compressed_gfx_table.txt. Curated - extend as ids get identified.
 ;
-; CONFIRMED (captures + slot contents):
-00 Boot+Stage1 flow (opening/title/level 1 all run as id 0)
-13 Title / player select
-24 Title attract screens
-25 Opening animation (bank $50 cutscene)
-60 Ending screen maps
-6A Interstitial screen ($0A:$A8E2 map)
-55 Interstitial screen ($38:$B8B1 map)
+; LEVEL ids (runtime $2093; plain hex key). $00 covers the whole pre-game
+; flow (opening/title/pick) AND level 1 - the game runs them as one id.
+00 Level 1 (+ opening/title/pick flow)
+01 Level 2
+02 Level 3
+03 Level 4
+04 Level 5
+05 Level 6
+06 Level 7
+07 Level 8
+0A Special stage 1
+0B Special stage 2
 ;
-; STRONG GUESSES (bank clustering in the $C5BA slots - verify in play):
-02 Stage 1 scenery set (bank $40 tiles + $44 sprites)
-08 Stage boss / heavy load (banks $44,$48,$50,$54)
-18 Stage 2-ish (bank $50 tiles)
-19 Stage 3-ish (bank $54 tiles)
-3A Stage 6-ish (bank $64 tiles)
-3D Stage 7-ish (bank $68 sprites)
-40 Stage 8-ish (bank $6C tiles)
-57 Character load A-1
-58 Character load B-1
-59 Character load C-1
-5A Character load D-1
-5B Character select A-2
-5C Character select B-2
-5D Character select C-2
-5E Character select D-2
+; SLOT ids ($C5BA sequence-table load lists; key prefixed with s).
+; Confirmed from captures + slot contents:
+s13 Title / player select load
+s24 Title attract screens
+s25 Opening animation (bank $50)
+s60 Ending screen maps
+s6A Interstitial screen ($0A:$A8E2)
+s55 Interstitial screen ($38:$B8B1)
+s57 Character load A-1
+s58 Character load B-1
+s59 Character load C-1
+s5A Character load D-1
+s5B Character select A-2
+s5C Character select B-2
+s5D Character select C-2
+s5E Character select D-2
+s00 Stage 1 load list
+s01 Stage 1 load list
+s02 Stage 1 load list
+s03 Stage 1 load list
