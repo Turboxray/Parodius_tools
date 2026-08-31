@@ -340,6 +340,40 @@ def extract(argv):
 
 
 # ----------------------------------------------------------------------------
+# Pre-build: sanity-check the user-supplied ROM (strip a 512-byte header)
+# ----------------------------------------------------------------------------
+ROM_SIZE = 0x100000
+
+
+def check(argv):
+    p = argv[0] if argv else os.path.join(HERE, "Parodius_Da__original.pce")
+    if not os.path.exists(p):
+        print("ERROR: %s not found - supply your own clean dump of\n"
+              "Parodius Da! (J) under that name (see README)." % os.path.basename(p))
+        sys.exit(1)
+    n = os.path.getsize(p)
+    if n == ROM_SIZE + 512:
+        data = open(p, "rb").read()
+        open(p, "wb").write(data[512:])
+        print("%s had a 512-byte header - stripped (now %d bytes)."
+              % (os.path.basename(p), ROM_SIZE))
+    elif n != ROM_SIZE:
+        print("ERROR: %s is %d bytes; expected %d (headerless) or %d "
+              "(with 512-byte header). Wrong dump?"
+              % (os.path.basename(p), n, ROM_SIZE, ROM_SIZE + 512))
+        sys.exit(1)
+    # cheap identity check: the RESET vector of bank 0 must be plausible
+    with open(p, "rb") as f:
+        f.seek(0x1FFE)
+        lo, hi = f.read(2)
+    if hi < 0xC0:
+        print("WARNING: reset vector $%02X%02X looks wrong - is this really "
+              "Parodius Da! (J)?" % (hi, lo))
+    else:
+        print("%s: OK (%d bytes, headerless)" % (os.path.basename(p), ROM_SIZE))
+
+
+# ----------------------------------------------------------------------------
 # Post-build: blank the dead original graphics region
 # ----------------------------------------------------------------------------
 def zero(argv):
@@ -355,6 +389,8 @@ def main():
         extract(sys.argv[2:])
     elif len(sys.argv) >= 2 and sys.argv[1] == "zero":
         zero(sys.argv[2:])
+    elif len(sys.argv) >= 2 and sys.argv[1] == "check":
+        check(sys.argv[2:])
     else:
         print(__doc__)
         sys.exit(1)

@@ -7,6 +7,8 @@ rem no -D). SF2 assets are extracted once; each SF2 image gets its dead
 rem original gfx region zeroed.
 set PATH=%PATH%;c:\huc\bin
 
+python pce_sf2_mapper_prep.py check Parodius_Da__original.pce
+if errorlevel 1 exit /b 1
 python pce_sf2_mapper_prep.py extract Parodius_Da__original.pce
 python rip_palettes.py
 if errorlevel 1 exit /b 1

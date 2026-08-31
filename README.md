@@ -3,9 +3,11 @@
 Buildable hacks for **Parodius Da! - Shinwa kara Owarai he (J)** (HuCard,
 1MB). By Turboxray.
 
-**No ROMs or extracted game assets are included.** Supply your own clean,
-headerless dump as `Parodius_Da__original.pce` (1,048,576 bytes) in the
-repo root; everything is built or extracted from it.
+**No ROMs or extracted game assets are included.** Supply your own clean
+dump as `Parodius_Da__original.pce` (1,048,576 bytes) in the repo root;
+everything is built or extracted from it. A headered dump (+512 bytes) is
+detected and stripped automatically at the start of the build; any other
+size aborts with an error.
 
 ## The hacks
 
