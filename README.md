@@ -48,8 +48,8 @@ SF2 side of `build_all.bat`:
 4. `pce_sf2_mapper_prep.py zero` blanks the now-dead original graphics region.
 
 5. The build scripts expect the source rom (original) to be named:
-   `Parodius_Da__original.pce`. The scripts will take either headerless or
-   headered rom.
+   `Parodius_Da__original.pce`. The scripts will take either a headerless
+   or a headered rom.
 
 ## Palette editor
 
@@ -115,10 +115,70 @@ the flipped ones (or vice versa). Untick it to edit a variant
 independently — e.g. to make the "mirrored" copy deliberately different
 art.
 
-### PCEAS Assembler
+## PCEAS Assembler
 
 I've provided pceas.exe for convenience, but you should build your own
 executable from: https://github.com/pce-devel/huc
+
+## The approach behind adding SF2 support
+
+ The basic idea is that games typically store data as a block, be it
+compressed or uncompressed, with some type of header. The header could
+have a bank number, address, size, vram address, etc. You can make this
+into a unique ID, place a hook in the original code path, and the hook
+checks for this relevant info. If it finds a match, it can load the
+uncompressed data.. or alternate data.
+
+ Of course, this new data needs to be in SF2 rom banks. Since the table
+itself can be quite large, depending on how you interpret the "header",
+this is also usually placed in the SF2 upper banks area.
+
+ Parodius was quite simple in the call and params. It also had H and V
+flip flags for realtime flipping of a tile before writing into vram.
+In this example, I chose not to do the same.. and just use them as
+identification bits further into a different block (pre-flipped).
+
+ For this Parodius SF2 extension.. I played through Parodius with a lua
+logging script and captured all the compressed block addresses. Once 99%
+of the table was known, it was easy to find the few that I didn't hit
+from the table. The build scripts take your existing original rom, extract
+the graphic blocks, and clear out the upper 512k of the original 1 Megabyte
+space.
+
+## How to use the editors
+
+ I've included two editors. One is the palette editor that I quickly cobbled
+together. And the other one is a makeshift tile/sprite cell editor. You'll
+have to match the palettes yourself, but they are marked and you can go
+through the list to find the stage/area that you want.
+
+ I haven't RE'd the tilemap and meta-tile sections completely yet, so they're
+not in the editor. The tilemaps are straight 32x32 meta-tile column format.
+There is no "screen" definition to the tilemap that Konami normally
+implements.
+
+ For the palette editor, I've included a way to look at the original colors
+so you can compare the difference. There's an A/B window.. and you can load
+up original colors on one, and the project colors in the other, and view the
+difference with the "A/B diff" button that opens up a new third window. The
+game hard-bakes the fading into palette blocks (and you'll see that in the
+naming parts `fade 3/12`, etc).. that was the original reason for the A/B
+windows. You can also copy/paste from one window to the other.
+
+ The browse button is for ordering the palette blocks by whatever attribute
+(column) and the drop-down is just for fast searching/peeking at other entries
+near the one you chose. If you select a color, and modify it.. you need to
+use the "Apply" button. If you don't, and view another block and then come
+back.. the changes will be lost. The only exception to this is the copy and
+paste mechanism. I did this because I wanted to be able to preview changes
+without making them permanent. If you want to keep all changes, after you
+apply them (either directly or copy/paste), you need to use the "Save to
+palette.inc" button. That will not overwrite palette_org.inc; it always
+writes to the palette.inc file.
+
+ Just to note: the palette_org.inc file is derived from the "original" rom
+you've supplied to the project. If you supply an already-patched rom, it
+will be derived from that rom.
 
 ## Credits
 
